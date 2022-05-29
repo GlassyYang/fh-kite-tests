@@ -1,0 +1,56 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  
+  config.vm.box = "glassyyang/kite-test-env"
+  
+  config.vm.provider "virtualbox" do |vb|
+    vb.memory = "512"
+    vb.cpus = "1"
+  end
+
+  config.vm.box_check_update = false
+
+  config.vm.define "NFD1" do |nfd1|
+    
+    nfd1.vm.box = "glassyyang/kite-test-env"
+    
+    nfd1.vm.synced_folder "../conf", "/usr/local/etc/ndn"
+    
+    nfd1.vm.hostname = "nfd1.local"
+    nfd1.vm.network "private_network", ip: "192.168.56.2", hostname: true
+    
+  end
+
+  config.vm.define "NFD2" do |nfd2|
+    
+    nfd2.vm.box = "glassyyang/kite-test-env"
+    
+    nfd2.vm.synced_folder "../conf", "/usr/local/etc/ndn"
+    
+    nfd2.vm.hostname = "nfd2.local"
+    nfd2.vm.network "private_network", ip: "192.168.56.3", hostname: true
+    
+  end
+
+  config.vm.define "NFD3" do |nfd3|
+    
+    nfd3.vm.box = "glassyyang/kite-test-env"
+
+    nfd3.vm.synced_folder "../conf", "/usr/local/etc/ndn"
+    nfd3.vm.hostname = "nfd3.local"
+    nfd3.vm.network "private_network", ip: "192.168.56.4", hostname: true
+    
+  end
+
+  config.vm.define "NFD4" do |nfd4|
+    
+    nfd4.vm.box = "glassyyang/kite-test-env"
+
+    nfd4.vm.synced_folder "../conf", "/usr/local/etc/ndn"
+    nfd4.vm.hostname = "nfd4.local"
+    nfd4.vm.network "private_network", ip: "192.168.56.5", hostname: true
+    
+  end
+end
