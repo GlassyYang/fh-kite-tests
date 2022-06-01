@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_TPM_BACK_END_HPP
-#define NDN_SECURITY_TPM_BACK_END_HPP
+#ifndef NDN_CXX_SECURITY_TPM_BACK_END_HPP
+#define NDN_CXX_SECURITY_TPM_BACK_END_HPP
 
 #include "ndn-cxx/security/tpm/tpm.hpp"
 
@@ -99,15 +99,14 @@ public: // key management
    * @brief Import a private key in encrypted PKCS #8 format.
    *
    * @param keyName The name of the key to use in the TPM.
-   * @param pkcs8 Pointer to the key in encrypted PKCS #8 format.
-   * @param pkcs8Len The size of the key in encrypted PKCS #8 format.
+   * @param pkcs8 The key in encrypted PKCS #8 format.
    * @param pw The password to decrypt the private key.
    * @param pwLen The length of the password.
    *
    * @throw Error The key could not be imported.
    */
   void
-  importKey(const Name& keyName, const uint8_t* pkcs8, size_t pkcs8Len, const char* pw, size_t pwLen);
+  importKey(const Name& keyName, span<const uint8_t> pkcs8, const char* pw, size_t pwLen);
 
   /**
    * @brief Import a private key.
@@ -191,7 +190,7 @@ private: // pure virtual methods
   doExportKey(const Name& keyName, const char* pw, size_t pwLen) = 0;
 
   virtual void
-  doImportKey(const Name& keyName, const uint8_t* pkcs8, size_t pkcs8Len, const char* pw, size_t pwLen) = 0;
+  doImportKey(const Name& keyName, span<const uint8_t> pkcs8, const char* pw, size_t pwLen) = 0;
 
   virtual void
   doImportKey(const Name& keyName, shared_ptr<transform::PrivateKey> key) = 0;
@@ -201,4 +200,4 @@ private: // pure virtual methods
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_TPM_BACK_END_HPP
+#endif // NDN_CXX_SECURITY_TPM_BACK_END_HPP

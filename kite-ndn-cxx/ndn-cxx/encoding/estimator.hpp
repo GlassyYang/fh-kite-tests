@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_ENCODING_ESTIMATOR_HPP
-#define NDN_ENCODING_ESTIMATOR_HPP
+#ifndef NDN_CXX_ENCODING_ESTIMATOR_HPP
+#define NDN_CXX_ENCODING_ESTIMATOR_HPP
 
 #include "ndn-cxx/encoding/block.hpp"
 
@@ -28,123 +28,91 @@ namespace ndn {
 namespace encoding {
 
 /**
- * @brief Helper class to estimate size of TLV encoding
- * Interface of this class (mostly) matches interface of Encoder class
+ * @brief Helper class to estimate size of TLV encoding.
+ *
+ * The interface of this class (mostly) matches that of the Encoder class.
+ *
  * @sa Encoder
  */
 class Estimator : noncopyable
 {
 public: // common interface between Encoder and Estimator
   /**
-   * @brief Prepend a byte
+   * @brief Prepend a sequence of bytes
    */
   constexpr size_t
-  prependByte(uint8_t) const noexcept
+  prependBytes(span<const uint8_t> bytes) const noexcept
   {
-    return 1;
+    return bytes.size();
   }
 
   /**
-   * @brief Append a byte
+   * @brief Append a sequence of bytes
    */
   constexpr size_t
-  appendByte(uint8_t) const noexcept
+  appendBytes(span<const uint8_t> bytes) const noexcept
   {
-    return 1;
+    return bytes.size();
   }
 
   /**
-   * @brief Prepend a byte array @p array of length @p length
-   */
-  constexpr size_t
-  prependByteArray(const uint8_t*, size_t length) const noexcept
-  {
-    return length;
-  }
-
-  /**
-   * @brief Append a byte array @p array of length @p length
-   */
-  constexpr size_t
-  appendByteArray(const uint8_t*, size_t length) const noexcept
-  {
-    return length;
-  }
-
-  /**
-   * @brief Prepend range of bytes from the range [@p first, @p last)
+   * @brief Prepend bytes from the range [@p first, @p last)
    */
   template<class Iterator>
-  size_t
+  constexpr size_t
   prependRange(Iterator first, Iterator last) const noexcept
   {
-    return std::distance(first, last);
+    return static_cast<size_t>(std::distance(first, last));
   }
 
   /**
-   * @brief Append range of bytes from the range [@p first, @p last)
+   * @brief Append bytes from the range [@p first, @p last)
    */
   template<class Iterator>
-  size_t
+  constexpr size_t
   appendRange(Iterator first, Iterator last) const noexcept
   {
-    return std::distance(first, last);
+    return static_cast<size_t>(std::distance(first, last));
   }
 
   /**
-   * @brief Prepend VarNumber @p varNumber of NDN TLV encoding
-   * @sa http://named-data.net/doc/ndn-tlv/
+   * @brief Prepend @p n in VarNumber encoding
    */
-  size_t
-  prependVarNumber(uint64_t varNumber) const noexcept;
+  constexpr size_t
+  prependVarNumber(uint64_t n) const noexcept
+  {
+    return tlv::sizeOfVarNumber(n);
+  }
 
   /**
-   * @brief Prepend VarNumber @p varNumber of NDN TLV encoding
-   * @sa http://named-data.net/doc/ndn-tlv/
+   * @brief Append @p n in VarNumber encoding
    */
-  size_t
-  appendVarNumber(uint64_t varNumber) const noexcept;
+  constexpr size_t
+  appendVarNumber(uint64_t n) const noexcept
+  {
+    return tlv::sizeOfVarNumber(n);
+  }
 
   /**
-   * @brief Prepend non-negative integer @p integer of NDN TLV encoding
-   * @sa http://named-data.net/doc/ndn-tlv/
+   * @brief Prepend @p n in NonNegativeInteger encoding
    */
-  size_t
-  prependNonNegativeInteger(uint64_t integer) const noexcept;
+  constexpr size_t
+  prependNonNegativeInteger(uint64_t n) const noexcept
+  {
+    return tlv::sizeOfNonNegativeInteger(n);
+  }
 
   /**
-   * @brief Append non-negative integer @p integer of NDN TLV encoding
-   * @sa http://named-data.net/doc/ndn-tlv/
+   * @brief Append @p n in NonNegativeInteger encoding
    */
-  size_t
-  appendNonNegativeInteger(uint64_t integer) const noexcept;
-
-  /**
-   * @brief Prepend TLV block of type @p type and value from buffer @p array of size @p arraySize
-   */
-  size_t
-  prependByteArrayBlock(uint32_t type, const uint8_t* array, size_t arraySize) const noexcept;
-
-  /**
-   * @brief Append TLV block of type @p type and value from buffer @p array of size @p arraySize
-   */
-  size_t
-  appendByteArrayBlock(uint32_t type, const uint8_t* array, size_t arraySize) const noexcept;
-
-  /**
-   * @brief Prepend TLV block @p block
-   */
-  size_t
-  prependBlock(const Block& block) const;
-
-  /**
-   * @brief Append TLV block @p block
-   */
-  size_t
-  appendBlock(const Block& block) const;
+  constexpr size_t
+  appendNonNegativeInteger(uint64_t n) const noexcept
+  {
+    return tlv::sizeOfNonNegativeInteger(n);
+  }
 };
 
 } // namespace encoding
 } // namespace ndn
 
-#endif // NDN_ENCODING_ESTIMATOR_HPP
+#endif // NDN_CXX_ENCODING_ESTIMATOR_HPP

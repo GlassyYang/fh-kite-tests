@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2020,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -22,7 +22,7 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * @author Yang Zhang <glassyyang@outlook.com>
  */
 
@@ -31,10 +31,9 @@
 #include "common/global.hpp"
 #include "common/logger.hpp"
 #include "rib/service.hpp"
-#include <iostream>
 
 namespace nfd {
-namespace fw{
+namespace fw {
 
 NFD_LOG_INIT(KiteStrategy);
 NFD_REGISTER_STRATEGY(KiteStrategy);
@@ -58,33 +57,29 @@ const Name& KiteStrategy::getStrategyName() {
   static Name strategyName("/localhost/nfd/strategy/kite/%FD%01");
   return strategyName;
 }
-  
+
 void
-KiteStrategy::afterReceiveInterest(const FaceEndpoint& ingress, const Interest& interest,
-                      const shared_ptr<pit::Entry>& pitEntry) 
+KiteStrategy::afterReceiveInterest(const Interest& interest, const FaceEndpoint& ingress,
+                      const shared_ptr<pit::Entry>& pitEntry)
 {
-  const DelegationList& delegationList = interest.getForwardingHint();
+  const auto& delegationList = interest.getForwardingHint();
   const Face& inFace = ingress.face;
   bool foundNextHops = false;
   if (!delegationList.empty())
   {
-    auto kiteHint = delegationList.end();
-    for (auto i = delegationList.begin(); i != delegationList.end(); i++)
-    {
-      NDN_LOG_DEBUG("forwarding hint preference: " << i->preference);
-      if (i->preference == tlv::ContentType_KiteAck) {
-          kiteHint = i;
-          break;
+    // auto kiteHint = delegationList.end();
+    Name kiteHint;
+    for(auto &delegation : delegationList) {
+      if(!delegation.empty() && *delegation.begin() == ndn::kite::KITE_KEYWORD) {
+        kiteHint.append(delegation.getSubName(1));
       }
     }
 
-    if(kiteHint != delegationList.end()) {
-      NDN_LOG_DEBUG("kite hint found."); 
+    if(!kiteHint.empty()) {
       // find fib entry by PIT entry
       const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
       const fib::NextHopList& nextHops = fibEntry.getNextHops();
       const auto& mpName = fibEntry.getPrefix();
-      
       for(auto& nextHop : nextHops) {
         if(!isNextHopEligible(inFace, interest, nextHop, pitEntry)) {
           continue;
@@ -94,11 +89,11 @@ KiteStrategy::afterReceiveInterest(const FaceEndpoint& ingress, const Interest& 
           foundNextHops = true;
           auto inRecordInfo = pitEntry->getInRecord(inFace)->insertStrategyInfo<KiteInterestStatus>().first;
           inRecordInfo->retrasmissionStage = InterestRetrasmissionStage::STRAIGHT_FORWARD;
-          inRecordInfo->rvName = kiteHint->name;
+          inRecordInfo->rvName = kiteHint;
         }
         NFD_LOG_DEBUG("send Interest=" << interest << " from=" << inFace.getId() <<
                   " to=" << outFace.getId());
-        auto outRecord = this->sendInterest(pitEntry, outFace, interest);
+        auto outRecord = this->sendInterest(interest, outFace, pitEntry);
         auto interestStatus = outRecord->insertStrategyInfo<KiteInterestStatus>().first;
         interestStatus->retrasmissionStage = InterestRetrasmissionStage::STRAIGHT_FORWARD;
         interestStatus->mpName = mpName;
@@ -106,7 +101,7 @@ KiteStrategy::afterReceiveInterest(const FaceEndpoint& ingress, const Interest& 
       // If cannot found nexthop to transmit, use rv forwarding hint transmiting interest.
       if(!foundNextHops) {
         // if cannot find fib entry, using rv name to find again.
-        const Name& rvName = kiteHint->name;
+        const Name& rvName = kiteHint;
         NFD_LOG_DEBUG("lookup nexthops by rv name: " << rvName.toUri());
         const fib::Entry& rvEntry = this->lookupFib(rvName);
         for(auto& nextHop : rvEntry.getNextHops()) {
@@ -119,20 +114,22 @@ KiteStrategy::afterReceiveInterest(const FaceEndpoint& ingress, const Interest& 
           Face& outFace = nextHop.getFace();
           NFD_LOG_DEBUG("send Interest=" << interest << " from=" << inFace.getId() <<
                     " to=" << outFace.getId());
-          this->sendInterest(pitEntry, outFace, interest);
+          this->sendInterest(interest, outFace, pitEntry);
         }
-        if (!foundNextHops) {
-          // reject the interest
-          NFD_LOG_DEBUG("NACK kite Interest=" << interest << " from=" << ingress << " noNextHop");
-          lp::NackHeader nackHeader;
-          nackHeader.setReason(lp::NackReason::NO_ROUTE);
-          this->sendNack(pitEntry, ingress.face, nackHeader);
-          this->rejectPendingInterest(pitEntry);
-        }
-      } else {
+      }
+      else {
         const auto& entry = this->getMeasurements().get(mpName);
         auto pki = entry->insertStrategyInfo<KiteMobileProducerInfo>().first;
         pki->pitEntrys.insert(make_pair(interest.getName(), pitEntry));
+      }
+      if (!foundNextHops)
+      {
+        // reject the interest
+        NFD_LOG_DEBUG("NACK Interest=" << interest << " from=" << ingress << " noNextHop");
+        lp::NackHeader nackHeader;
+        nackHeader.setReason(lp::NackReason::NO_ROUTE);
+        this->sendNack(nackHeader, ingress.face, pitEntry);
+        this->rejectPendingInterest(pitEntry);
       }
       return;
     }
@@ -141,10 +138,10 @@ KiteStrategy::afterReceiveInterest(const FaceEndpoint& ingress, const Interest& 
   const fib::Entry& fibEntry = this->lookupFib(*pitEntry);
   const fib::NextHopList& nextHops = fibEntry.getNextHops();
   if (nextHops.empty()) {
-    NFD_LOG_DEBUG("NACK normal Interest=" << interest << " from=" << ingress << " noNextHop");
+    NFD_LOG_DEBUG("NACK Interest=" << interest << " from=" << ingress << " noNextHop");
     lp::NackHeader nackHeader;
     nackHeader.setReason(lp::NackReason::NO_ROUTE);
-    this->sendNack(pitEntry, ingress.face, nackHeader);
+    this->sendNack(nackHeader, ingress.face, pitEntry);
     this->rejectPendingInterest(pitEntry);
   }
 
@@ -155,25 +152,26 @@ KiteStrategy::afterReceiveInterest(const FaceEndpoint& ingress, const Interest& 
     if (!foundNextHops)
     {
       foundNextHops = true;
-    } 
+    }
+
     Face& outFace = nexthop.getFace();
     NFD_LOG_DEBUG("send Interest=" << interest << " from=" << inFace.getId() <<
                   " to=" << outFace.getId());
-    this->sendInterest(pitEntry, outFace, interest);
+    this->sendInterest(interest, outFace, pitEntry);
   }
   if(!foundNextHops) {
     // reject the interest
     NFD_LOG_DEBUG("NACK Interest=" << interest << " from=" << ingress << " noNextHop");
     lp::NackHeader nackHeader;
     nackHeader.setReason(lp::NackReason::NO_ROUTE);
-    this->sendNack(pitEntry, ingress.face, nackHeader);
+    this->sendNack(nackHeader, ingress.face, pitEntry);
     this->rejectPendingInterest(pitEntry);
   }
 }
 
 void
-KiteStrategy::afterReceiveNack(const FaceEndpoint& ingress, const lp::Nack& nack,
-                  const shared_ptr<pit::Entry>& pitEntry) 
+KiteStrategy::afterReceiveNack(const lp::Nack& nack, const FaceEndpoint& ingress,
+                  const shared_ptr<pit::Entry>& pitEntry)
 {
   auto outRecord = pitEntry->getOutRecord(ingress.face);
   if (outRecord != pitEntry->out_end())
@@ -188,17 +186,18 @@ KiteStrategy::afterReceiveNack(const FaceEndpoint& ingress, const lp::Nack& nack
       }
     }
   }
-  this->processNack(ingress.face, nack, pitEntry);
+  this->processNack(nack, ingress.face, pitEntry);
 }
 
 void
-KiteStrategy::beforeSatisfyInterest(const shared_ptr<pit::Entry>& pitEntry,
-                  const FaceEndpoint& ingress, const Data& data)
+KiteStrategy::beforeSatisfyInterest(const Data& data,
+                  const FaceEndpoint& ingress, const shared_ptr<pit::Entry>& pitEntry)
 {
-  if (data.getContentType() == tlv::ContentType_KiteAck){  
+  if (data.getContentType() == tlv::ContentType_KiteAck){
     ndn::kite::Ack ack(data);
     this->registPrefix(pitEntry, ack);
-  } else {
+  }
+  else {
     auto outRecord = pitEntry->getOutRecord(ingress.face);
     if (outRecord != pitEntry->out_end()) {
       eraseMeasurement(*outRecord, pitEntry->getName());
@@ -219,7 +218,7 @@ KiteStrategy::registPrefix(const shared_ptr<pit::Entry>& pitEntry, const ndn::ki
           });
       });
       // retransmit pending interest to new mp
-      const Name & mpName = pa.getAnnouncedName();
+      const Name& mpName = pa.getAnnouncedName();
       auto entry = this->getMeasurements().get(mpName);
       if(entry == nullptr) {
         return;
@@ -233,7 +232,7 @@ KiteStrategy::registPrefix(const shared_ptr<pit::Entry>& pitEntry, const ndn::ki
           shared_ptr<pit::Entry> pitEntry = item.second.lock();
           if (pitEntry)
           {
-            this->sendInterest(pitEntry, mpFace, pitEntry->getInterest());
+            this->sendInterest(pitEntry->getInterest(), mpFace, pitEntry);
           }
         }
       }
@@ -266,7 +265,7 @@ KiteStrategy::sendNackForProcessNackTraits(const shared_ptr<pit::Entry>& pitEntr
   auto inRecord = pitEntry->getInRecord(outFace);
   if(!dealNack(*inRecord, pitEntry)) {
     NFD_LOG_DEBUG("cannot find eligible rv face to retransmit " << pitEntry->getInterest() << " send nack");
-    this->sendNack(pitEntry, inRecord->getFace(), header);
+    this->sendNack(header, inRecord->getFace(), pitEntry);
     auto outRecord = pitEntry->getOutRecord(outFace);
     if(outRecord != pitEntry->out_end()) {
     eraseMeasurement(*outRecord, pitEntry->getName());
@@ -284,7 +283,7 @@ KiteStrategy::sendNacksForProcessNackTraits(const shared_ptr<pit::Entry>& pitEnt
   });
   if(inRecord == inRecords.end()) {
     NFD_LOG_DEBUG("cannot find eligible rv face to retransmit " << pitEntry->getInterest() << " send nack");
-    this->sendNacks(pitEntry, header);
+    this->sendNacks(header, pitEntry);
     auto outRecord = pitEntry->out_begin();
     if (outRecord != pitEntry->out_end()) {
       eraseMeasurement(*outRecord, pitEntry->getName());
@@ -292,7 +291,7 @@ KiteStrategy::sendNacksForProcessNackTraits(const shared_ptr<pit::Entry>& pitEnt
   }
 }
 
-void 
+void
 KiteStrategy::eraseMeasurement(const pit::OutRecord& inRecord, const Name& interestName)
 {
   auto interestStage = inRecord.getStrategyInfo<KiteInterestStatus>();
@@ -308,7 +307,7 @@ KiteStrategy::eraseMeasurement(const pit::OutRecord& inRecord, const Name& inter
 
 bool
 KiteStrategy::dealNack(const pit::InRecord& inRecord, const shared_ptr<pit::Entry>& pitEntry)
-{ 
+{
   auto& inRecords = pitEntry->getInRecords();
   auto& interest = pitEntry->getInterest();
   auto interestStatus = inRecord.getStrategyInfo<KiteInterestStatus>();
@@ -342,12 +341,12 @@ KiteStrategy::dealNack(const pit::InRecord& inRecord, const shared_ptr<pit::Entr
         }
         NFD_LOG_DEBUG("send Interest=" << interest << " from=" << inRecord.getFace().getId() <<
                     " to=" << nextHop.getFace().getId());
-        this->sendInterest(pitEntry, nextHop.getFace(), interest);
+        this->sendInterest(interest, nextHop.getFace(), pitEntry);
       }
       return foundNextHops;
     }
   }
   return false;
 }
-}
-}
+} // namespace fw
+} // namespace nfd

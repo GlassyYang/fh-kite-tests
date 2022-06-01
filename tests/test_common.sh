@@ -22,8 +22,6 @@ stop_nfd() {
     execute NFD3 "nfd-stop"
 }
 
-get_route
-
 KILL_PRODUCER="pkill -9 kiteproducer"
 # send SIGINT to kite producer
 SEND_PRODUCER_SIGNAL="pkill -2 kiteproducer"

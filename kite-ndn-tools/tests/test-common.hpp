@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2020,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -26,73 +26,35 @@
 #ifndef NDN_TOOLS_TESTS_TEST_COMMON_HPP
 #define NDN_TOOLS_TESTS_TEST_COMMON_HPP
 
-#include "boost-test.hpp"
 #include "core/common.hpp"
+#include "tests/boost-test.hpp"
 
-#include <ndn-cxx/util/time-unit-test-clock.hpp>
+namespace ndn::tests {
 
-namespace ndn {
-namespace tests {
-
-/** \brief a test fixture that overrides steady clock and system clock
- */
-class UnitTestTimeFixture
-{
-protected:
-  UnitTestTimeFixture();
-
-  ~UnitTestTimeFixture();
-
-  /** \brief advance steady and system clocks
-   *
-   *  Clocks are advanced in increments of \p tick for \p nTicks ticks.
-   *  After each tick, the supplied io_service is polled to process pending I/O events.
-   *
-   *  Exceptions thrown during I/O events are propagated to the caller.
-   *  Clock advancing would stop in case of an exception.
-   */
-  void
-  advanceClocks(boost::asio::io_service& io,
-                time::nanoseconds tick, size_t nTicks = 1);
-
-  /** \brief advance steady and system clocks
-   *
-   *  Clocks are advanced in increments of \p tick for \p total time.
-   *  The last increment might be shorter than \p tick.
-   *  After each tick, the supplied io_service is polled to process pending I/O events.
-   *
-   *  Exceptions thrown during I/O events are propagated to the caller.
-   *  Clock advancing would stop in case of an exception.
-   */
-  void
-  advanceClocks(boost::asio::io_service& io,
-                time::nanoseconds tick, time::nanoseconds total);
-
-protected:
-  shared_ptr<time::UnitTestSteadyClock> steadyClock;
-  shared_ptr<time::UnitTestSystemClock> systemClock;
-};
-
-/** \brief create an Interest
+/**
+ * \brief Create an Interest
  */
 shared_ptr<Interest>
 makeInterest(const Name& name, bool canBePrefix = false,
-             time::milliseconds lifetime = DEFAULT_INTEREST_LIFETIME,
+             optional<time::milliseconds> lifetime = nullopt,
              optional<Interest::Nonce> nonce = nullopt);
 
-/** \brief create a Data with fake signature
- *  \note Data may be modified afterwards without losing the fake signature.
- *        If a real signature is desired, sign again with KeyChain.
+/**
+ * \brief Create a Data with a null (i.e., empty) signature
+ *
+ * If a "real" signature is desired, use KeyChainFixture and sign again with `m_keyChain`.
  */
 shared_ptr<Data>
 makeData(const Name& name);
 
-/** \brief add a fake signature to Data
+/**
+ * \brief Add a null signature to \p data
  */
 Data&
 signData(Data& data);
 
-/** \brief add a fake signature to Data
+/**
+ * \brief Add a null signature to \p data
  */
 inline shared_ptr<Data>
 signData(shared_ptr<Data> data)
@@ -101,12 +63,27 @@ signData(shared_ptr<Data> data)
   return data;
 }
 
-/** \brief create a Nack
+/**
+ * \brief Create a Nack
  */
 lp::Nack
 makeNack(Interest interest, lp::NackReason reason);
 
-} // namespace tests
-} // namespace ndn
+/**
+ * \brief Replace a name component in a packet
+ * \param[inout] pkt the packet
+ * \param index the index of the name component to replace
+ * \param args arguments to name::Component constructor
+ */
+template<typename Packet, typename ...Args>
+void
+setNameComponent(Packet& pkt, ssize_t index, Args&& ...args)
+{
+  Name name = pkt.getName();
+  name.set(index, name::Component(std::forward<Args>(args)...));
+  pkt.setName(name);
+}
+
+} // namespace ndn::tests
 
 #endif // NDN_TOOLS_TESTS_TEST_COMMON_HPP

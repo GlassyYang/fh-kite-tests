@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -26,10 +26,10 @@ namespace ndn {
 namespace security {
 namespace pib {
 
-Identity::Identity() = default;
+Identity::Identity() noexcept = default;
 
-Identity::Identity(weak_ptr<detail::IdentityImpl> impl)
-  : m_impl(impl)
+Identity::Identity(weak_ptr<detail::IdentityImpl> impl) noexcept
+  : m_impl(std::move(impl))
 {
 }
 
@@ -40,15 +40,15 @@ Identity::getName() const
 }
 
 Key
-Identity::addKey(const uint8_t* key, size_t keyLen, const Name& keyName) const
+Identity::addKey(span<const uint8_t> key, const Name& keyName) const
 {
-  return lock()->addKey(key, keyLen, keyName);
+  return lock()->addKey(key, keyName);
 }
 
 void
 Identity::removeKey(const Name& keyName) const
 {
-  return lock()->removeKey(keyName);
+  lock()->removeKey(keyName);
 }
 
 Key
@@ -63,25 +63,25 @@ Identity::getKeys() const
   return lock()->getKeys();
 }
 
-const Key&
+Key
 Identity::setDefaultKey(const Name& keyName) const
 {
   return lock()->setDefaultKey(keyName);
 }
 
-const Key&
-Identity::setDefaultKey(const uint8_t* key, size_t keyLen, const Name& keyName) const
+Key
+Identity::setDefaultKey(span<const uint8_t> key, const Name& keyName) const
 {
-  return lock()->setDefaultKey(key, keyLen, keyName);
+  return lock()->setDefaultKey(key, keyName);
 }
 
-const Key&
+Key
 Identity::getDefaultKey() const
 {
   return lock()->getDefaultKey();
 }
 
-Identity::operator bool() const
+Identity::operator bool() const noexcept
 {
   return !m_impl.expired();
 }
@@ -90,29 +90,17 @@ shared_ptr<detail::IdentityImpl>
 Identity::lock() const
 {
   auto impl = m_impl.lock();
-
-  if (impl == nullptr)
-    NDN_THROW(std::domain_error("Invalid Identity instance"));
-
+  if (impl == nullptr) {
+    NDN_THROW(std::domain_error("Invalid PIB identity instance"));
+  }
   return impl;
 }
 
 bool
-operator!=(const Identity& lhs, const Identity& rhs)
+Identity::equals(const Identity& other) const noexcept
 {
-  return lhs.m_impl.owner_before(rhs.m_impl) || rhs.m_impl.owner_before(lhs.m_impl);
-}
-
-std::ostream&
-operator<<(std::ostream& os, const Identity& id)
-{
-  if (id) {
-    os << id.getName();
-  }
-  else {
-    os << "(empty)";
-  }
-  return os;
+  return !this->m_impl.owner_before(other.m_impl) &&
+         !other.m_impl.owner_before(this->m_impl);
 }
 
 } // namespace pib

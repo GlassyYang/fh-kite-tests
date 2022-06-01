@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SIGNATURE_INFO_HPP
-#define NDN_SIGNATURE_INFO_HPP
+#ifndef NDN_CXX_SIGNATURE_INFO_HPP
+#define NDN_CXX_SIGNATURE_INFO_HPP
 
 #include "ndn-cxx/key-locator.hpp"
 #include "ndn-cxx/security/validity-period.hpp"
@@ -143,13 +143,6 @@ public: // field access
   SignatureInfo&
   setKeyLocator(optional<KeyLocator> keyLocator);
 
-  /** @brief Remove KeyLocator
-   *  @deprecated Use `setKeyLocator(nullopt)`
-   */
-  [[deprecated("use setKeyLocator(nullopt)")]]
-  void
-  unsetKeyLocator();
-
   /** @brief Get ValidityPeriod
    *  @throw Error This SignatureInfo does not contain a ValidityPeriod
    */
@@ -164,13 +157,6 @@ public: // field access
   SignatureInfo&
   setValidityPeriod(optional<security::ValidityPeriod> validityPeriod);
 
-  /** @brief Remove ValidityPeriod
-   *  @deprecated Use `setValidityPeriod(nullopt)`
-   */
-  [[deprecated("use setValidityPeriod(nullopt)")]]
-  void
-  unsetValidityPeriod();
-
   /** @brief Get SignatureNonce
    *  @retval nullopt SignatureNonce is not set
    */
@@ -183,7 +169,7 @@ public: // field access
    *  Passing `nullopt` will remove the SignatureNonce.
    */
   SignatureInfo&
-  setNonce(optional<std::vector<uint8_t>> nonce);
+  setNonce(optional<span<const uint8_t>> nonce);
 
   /** @brief Get SignatureTime
    *  @retval nullopt SignatureTime is not set
@@ -233,22 +219,6 @@ public: // field access
   void
   removeCustomTlv(uint32_t type);
 
-  /** @brief Get SignatureType-specific sub-element
-   *  @deprecated Use getCustomTlv
-   *  @param type TLV-TYPE of sub-element
-   *  @throw Error Sub-element of specified type does not exist
-   */
-  [[deprecated("use getCustomTlv")]]
-  const Block&
-  getTypeSpecificTlv(uint32_t type) const;
-
-  /** @brief Append SignatureType-specific sub-element
-   *  @deprecated Use addCustomTlv
-   */
-  [[deprecated("use addCustomTlv")]]
-  void
-  appendTypeSpecificTlv(const Block& block);
-
 private:
   std::vector<Block>::const_iterator
   findOtherTlv(uint32_t type) const;
@@ -267,11 +237,13 @@ private:
   operator<<(std::ostream& os, const SignatureInfo& info);
 };
 
+#ifndef DOXYGEN
 extern template size_t
 SignatureInfo::wireEncode<encoding::EncoderTag>(EncodingBuffer&, SignatureInfo::Type) const;
 
 extern template size_t
 SignatureInfo::wireEncode<encoding::EstimatorTag>(EncodingEstimator&, SignatureInfo::Type) const;
+#endif
 
 bool
 operator==(const SignatureInfo& lhs, const SignatureInfo& rhs);
@@ -287,4 +259,4 @@ operator<<(std::ostream& os, const SignatureInfo& info);
 
 } // namespace ndn
 
-#endif // NDN_SIGNATURE_INFO_HPP
+#endif // NDN_CXX_SIGNATURE_INFO_HPP

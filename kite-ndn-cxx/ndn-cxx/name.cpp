@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -103,7 +103,7 @@ Name::Name(std::string uri)
 
   // Unescape the components.
   while (iComponentStart < uri.size()) {
-    size_t iComponentEnd = uri.find("/", iComponentStart);
+    size_t iComponentEnd = uri.find('/', iComponentStart);
     if (iComponentEnd == std::string::npos)
       iComponentEnd = uri.size();
 
@@ -170,15 +170,15 @@ Name::deepCopy() const
 const name::Component&
 Name::at(ssize_t i) const
 {
+  auto ssize = static_cast<ssize_t>(size());
+  if (i < -ssize || i >= ssize) {
+    NDN_THROW(Error("Component at offset " + to_string(i) + " does not exist (out of bounds)"));
+  }
+
   if (i < 0) {
-    i += static_cast<ssize_t>(size());
+    i += ssize;
   }
-
-  if (i < 0 || static_cast<size_t>(i) >= size()) {
-    NDN_THROW(Error("Requested component does not exist (out of bounds)"));
-  }
-
-  return reinterpret_cast<const Component&>(m_wire.elements()[i]);
+  return static_cast<const Component&>(m_wire.elements()[static_cast<size_t>(i)]);
 }
 
 PartialName
@@ -227,13 +227,13 @@ Name::set(ssize_t i, Component&& component)
 }
 
 Name&
-Name::appendVersion(optional<uint64_t> version)
+Name::appendVersion(const optional<uint64_t>& version)
 {
   return append(Component::fromVersion(version.value_or(time::toUnixTimestamp(time::system_clock::now()).count())));
 }
 
 Name&
-Name::appendTimestamp(optional<time::system_clock::TimePoint> timestamp)
+Name::appendTimestamp(const optional<time::system_clock::time_point>& timestamp)
 {
   return append(Component::fromTimestamp(timestamp.value_or(time::system_clock::now())));
 }
@@ -241,13 +241,14 @@ Name::appendTimestamp(optional<time::system_clock::TimePoint> timestamp)
 Name&
 Name::append(const PartialName& name)
 {
-  if (&name == this)
+  if (&name == this) {
     // Copying from this name, so need to make a copy first.
     return append(PartialName(name));
+  }
 
-  for (size_t i = 0; i < name.size(); ++i)
-    append(name.at(i));
-
+  for (const auto& c : name) {
+    append(c);
+  }
   return *this;
 }
 
@@ -261,19 +262,19 @@ static constexpr uint8_t SHA256_OF_EMPTY_STRING[] = {
 Name&
 Name::appendParametersSha256DigestPlaceholder()
 {
-  static const Component placeholder(tlv::ParametersSha256DigestComponent,
-                                     SHA256_OF_EMPTY_STRING, sizeof(SHA256_OF_EMPTY_STRING));
+  static const Component placeholder(tlv::ParametersSha256DigestComponent, SHA256_OF_EMPTY_STRING);
   return append(placeholder);
 }
 
 void
 Name::erase(ssize_t i)
 {
-  if (i < 0) {
-    i += static_cast<ssize_t>(size());
+  if (i >= 0) {
+    m_wire.erase(std::next(m_wire.elements_begin(), i));
   }
-
-  m_wire.erase(m_wire.elements_begin() + i);
+  else {
+    m_wire.erase(std::prev(m_wire.elements_end(), -i));
+  }
 }
 
 void
@@ -383,8 +384,7 @@ namespace std {
 size_t
 hash<ndn::Name>::operator()(const ndn::Name& name) const
 {
-  return boost::hash_range(name.wireEncode().wire(),
-                           name.wireEncode().wire() + name.wireEncode().size());
+  return boost::hash_range(name.wireEncode().begin(), name.wireEncode().end());
 }
 
 } // namespace std

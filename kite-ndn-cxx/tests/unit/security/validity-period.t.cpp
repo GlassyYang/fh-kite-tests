@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,7 +22,7 @@
 #include "ndn-cxx/security/validity-period.hpp"
 
 #include "tests/boost-test.hpp"
-#include "tests/unit/unit-test-time-fixture.hpp"
+#include "tests/unit/clock-fixture.hpp"
 
 #include <boost/lexical_cast.hpp>
 
@@ -35,14 +35,40 @@ using namespace ndn::tests;
 BOOST_AUTO_TEST_SUITE(Security)
 BOOST_AUTO_TEST_SUITE(TestValidityPeriod)
 
-BOOST_FIXTURE_TEST_CASE(ConstructorSetter, UnitTestTimeFixture)
+BOOST_AUTO_TEST_SUITE(MakeRelative)
+
+BOOST_AUTO_TEST_CASE(FromNow)
 {
-  time::system_clock::TimePoint now = this->systemClock->getNow();
+  auto vp = ValidityPeriod::makeRelative(-1_s, 365_days, time::fromIsoString("20091117T203458,651387237"));
+  auto period = vp.getPeriod();
+  BOOST_CHECK_EQUAL(period.first, time::fromIsoString("20091117T203458"));
+  BOOST_CHECK_EQUAL(period.second, time::fromIsoString("20101117T203458"));
+}
 
-  time::system_clock::TimePoint notBefore = now - 1_day;
-  time::system_clock::TimePoint notAfter = notBefore + 2_days;
+BOOST_AUTO_TEST_CASE(Positive)
+{
+  auto vp = ValidityPeriod::makeRelative(10_s, 1_days, time::fromIsoString("20091117T203458,651387237"));
+  auto period = vp.getPeriod();
+  BOOST_CHECK_EQUAL(period.first, time::fromIsoString("20091117T203509"));
+  BOOST_CHECK_EQUAL(period.second, time::fromIsoString("20091118T203458"));
+}
 
-  ValidityPeriod validity1 = ValidityPeriod(notBefore, notAfter);
+BOOST_AUTO_TEST_CASE(Negative)
+{
+  auto vp = ValidityPeriod::makeRelative(-1_days, -10_s, time::fromIsoString("20091117T203458,651387237"));
+  auto period = vp.getPeriod();
+  BOOST_CHECK_EQUAL(period.first, time::fromIsoString("20091116T203459"));
+  BOOST_CHECK_EQUAL(period.second, time::fromIsoString("20091117T203448"));
+}
+
+BOOST_AUTO_TEST_SUITE_END() // MakeRelative
+
+BOOST_FIXTURE_TEST_CASE(ConstructorSetter, ClockFixture)
+{
+  auto now = m_systemClock->getNow();
+  auto notBefore = now - 1_day;
+  auto notAfter = notBefore + 2_days;
+  ValidityPeriod validity1(notBefore, notAfter);
 
   auto period = validity1.getPeriod();
   BOOST_CHECK_GE(period.first, notBefore); // fractional seconds will be removed
@@ -89,15 +115,11 @@ BOOST_AUTO_TEST_CASE(EncodingDecoding)
 {
   time::system_clock::TimePoint notBefore = time::getUnixEpoch();
   time::system_clock::TimePoint notAfter = notBefore + 1_day;
-
   ValidityPeriod v1(notBefore, notAfter);
-
   BOOST_CHECK_EQUAL_COLLECTIONS(v1.wireEncode().begin(), v1.wireEncode().end(),
                                 VP1, VP1 + sizeof(VP1));
 
-  BOOST_REQUIRE_NO_THROW(ValidityPeriod(Block(VP1, sizeof(VP1))));
-  Block block(VP1, sizeof(VP1));
-  ValidityPeriod v2(block);
+  ValidityPeriod v2(Block{VP1});
   BOOST_CHECK(v1.getPeriod() == v2.getPeriod());
 }
 
@@ -161,21 +183,17 @@ const uint8_t VP_E6[] = {
       0x54, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30
 };
 
-
 BOOST_AUTO_TEST_CASE(DecodingError)
 {
-  BOOST_CHECK_THROW(ValidityPeriod(Block(VP_E1, sizeof(VP_E1))), ValidityPeriod::Error);
-
-  BOOST_CHECK_THROW(ValidityPeriod(Block(VP_E2, sizeof(VP_E2))), ValidityPeriod::Error);
-  BOOST_CHECK_THROW(ValidityPeriod(Block(VP_E3, sizeof(VP_E3))), ValidityPeriod::Error);
-
-  BOOST_CHECK_THROW(ValidityPeriod(Block(VP_E4, sizeof(VP_E4))), ValidityPeriod::Error);
-  BOOST_CHECK_THROW(ValidityPeriod(Block(VP_E5, sizeof(VP_E5))), ValidityPeriod::Error);
+  BOOST_CHECK_THROW(ValidityPeriod(Block{VP_E1}), ValidityPeriod::Error);
+  BOOST_CHECK_THROW(ValidityPeriod(Block{VP_E2}), ValidityPeriod::Error);
+  BOOST_CHECK_THROW(ValidityPeriod(Block{VP_E3}), ValidityPeriod::Error);
+  BOOST_CHECK_THROW(ValidityPeriod(Block{VP_E4}), ValidityPeriod::Error);
+  BOOST_CHECK_THROW(ValidityPeriod(Block{VP_E5}), ValidityPeriod::Error);
+  BOOST_CHECK_THROW(ValidityPeriod(Block{VP_E6}), ValidityPeriod::Error);
 
   Block emptyBlock;
-  BOOST_CHECK_THROW((ValidityPeriod(emptyBlock)), ValidityPeriod::Error);
-
-  BOOST_CHECK_THROW(ValidityPeriod(Block(VP_E6, sizeof(VP_E6))), ValidityPeriod::Error);
+  BOOST_CHECK_THROW(ValidityPeriod{emptyBlock}, ValidityPeriod::Error);
 }
 
 BOOST_AUTO_TEST_CASE(Comparison)

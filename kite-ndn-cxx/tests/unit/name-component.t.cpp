@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -91,6 +91,7 @@ BOOST_AUTO_TEST_CASE(Generic)
   BOOST_CHECK_THROW(Component::fromEscapedString(""), Component::Error);
   BOOST_CHECK_THROW(Component::fromEscapedString("."), Component::Error);
   BOOST_CHECK_THROW(Component::fromEscapedString(".."), Component::Error);
+  BOOST_CHECK_THROW(Component::fromEscapedString("8="), Component::Error);
 }
 
 static void
@@ -104,7 +105,7 @@ testSha256Component(uint32_t type, const std::string& uriPrefix)
   }
   const std::string hexPctCanonical = "%28%BA%D4%B5%27%5B%D3%92%DB%B6p%C7%5C%F0%B6o%13%F7%94%2B%21%E8%0FU%C0%E8k7GS%A5H";
 
-  Component comp(Block(type, fromHex(hexLower)));
+  Component comp(type, fromHex(hexLower));
 
   BOOST_CHECK_EQUAL(comp.type(), type);
   BOOST_CHECK_EQUAL(comp.toUri(), uriPrefix + hexLower);
@@ -138,7 +139,7 @@ BOOST_AUTO_TEST_CASE(ParametersDigest)
 static void
 testDecimalComponent(uint32_t type, const std::string& uriPrefix)
 {
-  const Component comp(makeNonNegativeIntegerBlock(type, 42)); // TLV-VALUE is a nonNegativeInteger
+  const Component comp(makeNonNegativeIntegerBlock(type, 42)); // TLV-VALUE is a NonNegativeInteger
   BOOST_CHECK_EQUAL(comp.type(), type);
   BOOST_CHECK_EQUAL(comp.isNumber(), true);
   const auto compUri = uriPrefix + "42";
@@ -152,7 +153,7 @@ testDecimalComponent(uint32_t type, const std::string& uriPrefix)
   BOOST_CHECK_EQUAL(comp, Component::fromEscapedString(to_string(type) + "=%2A"));
   BOOST_CHECK_EQUAL(comp, Component::fromNumber(42, type));
 
-  const Component comp2(Block(type, fromHex("010203"))); // TLV-VALUE is *not* a nonNegativeInteger
+  const Component comp2(type, fromHex("010203")); // TLV-VALUE is *not* a NonNegativeInteger
   BOOST_CHECK_EQUAL(comp2.type(), type);
   BOOST_CHECK_EQUAL(comp2.isNumber(), false);
   const auto comp2Uri = to_string(type) + "=%01%02%03";
@@ -194,6 +195,29 @@ BOOST_AUTO_TEST_CASE(Timestamp)
 BOOST_AUTO_TEST_CASE(SequenceNum)
 {
   testDecimalComponent(tlv::SequenceNumNameComponent, "seq=");
+}
+
+BOOST_AUTO_TEST_CASE(Keyword)
+{
+  Component comp("2007 6E646E2D637878"_block);
+  BOOST_CHECK_EQUAL(comp.type(), tlv::KeywordNameComponent);
+  BOOST_CHECK_EQUAL(comp.isKeyword(), true);
+  BOOST_CHECK_EQUAL(comp.toUri(), "32=ndn-cxx");
+  BOOST_CHECK_EQUAL(comp.toUri(UriFormat::CANONICAL), "32=ndn-cxx");
+  BOOST_CHECK_EQUAL(comp.toUri(UriFormat::ALTERNATE), "32=ndn-cxx");
+  BOOST_CHECK_EQUAL(comp.toUri(UriFormat::ENV_OR_CANONICAL), "32=ndn-cxx");
+  BOOST_CHECK_EQUAL(comp.toUri(UriFormat::ENV_OR_ALTERNATE), "32=ndn-cxx");
+  BOOST_CHECK_EQUAL(Component::fromEscapedString("32=ndn-cxx"), comp);
+
+  comp.wireDecode("2000"_block);
+  BOOST_CHECK_EQUAL(comp.type(), tlv::KeywordNameComponent);
+  BOOST_CHECK_EQUAL(comp.isKeyword(), true);
+  BOOST_CHECK_EQUAL(comp.toUri(), "32=...");
+  BOOST_CHECK_EQUAL(Component::fromEscapedString("32=..."), comp);
+
+  BOOST_CHECK_THROW(Component::fromEscapedString("32="), Component::Error);
+  BOOST_CHECK_THROW(Component::fromEscapedString("32=."), Component::Error);
+  BOOST_CHECK_THROW(Component::fromEscapedString("32=.."), Component::Error);
 }
 
 BOOST_AUTO_TEST_CASE(OtherType)
@@ -247,6 +271,305 @@ BOOST_AUTO_TEST_CASE(InvalidType)
 
 BOOST_AUTO_TEST_SUITE_END() // Decode
 
+BOOST_AUTO_TEST_CASE(ConstructFromSpan)
+{
+  const uint8_t arr[] = {1, 2, 3};
+  Component c1(arr);
+  BOOST_TEST(c1.wireEncode() == "0803010203"_block);
+  Component c2(128, arr);
+  BOOST_TEST(c2.wireEncode() == "8003010203"_block);
+
+  const std::vector<uint8_t> vec = {4, 5, 6};
+  Component c3(vec);
+  BOOST_TEST(c3.wireEncode() == "0803040506"_block);
+  Component c4(128, vec);
+  BOOST_TEST(c4.wireEncode() == "8003040506"_block);
+
+  Component c5(128, {7, 8});
+  BOOST_TEST(c5.wireEncode() == "80020708"_block);
+
+  const Block b("090109"_block);
+  Component c6(128, b);
+  BOOST_TEST(c6.wireEncode() == "8003090109"_block);
+}
+
+BOOST_AUTO_TEST_SUITE(ConstructFromIterators) // Bug 2490
+
+using ContainerTypes = boost::mpl::vector<std::vector<uint8_t>,
+                                          std::list<uint8_t>,
+                                          std::vector<int8_t>,
+                                          std::list<int8_t>>;
+
+BOOST_AUTO_TEST_CASE_TEMPLATE(ZeroOctets, T, ContainerTypes)
+{
+  T bytes;
+  Component c(bytes.begin(), bytes.end());
+  BOOST_TEST(c.type() == tlv::GenericNameComponent);
+  BOOST_TEST(c.value_size() == 0);
+  BOOST_TEST(c.size() == 2);
+}
+
+BOOST_AUTO_TEST_CASE_TEMPLATE(OneOctet, T, ContainerTypes)
+{
+  T bytes{1};
+  Component c(9, bytes.begin(), bytes.end());
+  BOOST_TEST(c.type() == 0x09);
+  BOOST_TEST(c.value_size() == 1);
+  BOOST_TEST(c.size() == 3);
+}
+
+BOOST_AUTO_TEST_CASE_TEMPLATE(FourOctets, T, ContainerTypes)
+{
+  T bytes{1, 2, 3, 4};
+  Component c(0xFCEC, bytes.begin(), bytes.end());
+  BOOST_TEST(c.type() == 0xFCEC);
+  BOOST_TEST(c.value_size() == 4);
+  BOOST_TEST(c.size() == 8);
+}
+
+BOOST_AUTO_TEST_SUITE_END() // ConstructFromIterators
+
+BOOST_AUTO_TEST_SUITE(NamingConvention)
+
+template<typename ArgType>
+struct ConventionTest
+{
+  std::function<Component(ArgType)> makeComponent;
+  std::function<ArgType(const Component&)> getValue;
+  std::function<Name&(Name&, ArgType)> append;
+  Name expected;
+  ArgType value;
+  std::function<bool(const Component&)> isComponent;
+};
+
+class ConventionMarker
+{
+public:
+  ConventionMarker()
+  {
+    name::setConventionEncoding(name::Convention::MARKER);
+  }
+
+  ~ConventionMarker()
+  {
+    name::setConventionEncoding(name::Convention::TYPED);
+  }
+};
+
+class ConventionTyped
+{
+};
+
+class NumberWithMarker
+{
+public:
+  using ConventionRev = ConventionMarker;
+
+  ConventionTest<uint64_t>
+  operator()() const
+  {
+    return {[] (auto num) { return Component::fromNumberWithMarker(0xAA, num); },
+            [] (const Component& c) { return c.toNumberWithMarker(0xAA); },
+            [] (Name& name, auto num) -> Name& { return name.appendNumberWithMarker(0xAA, num); },
+            Name("/%AA%03%E8"),
+            1000,
+            [] (const Component& c) { return c.isNumberWithMarker(0xAA); }};
+  }
+};
+
+class SegmentMarker
+{
+public:
+  using ConventionRev = ConventionMarker;
+
+  ConventionTest<uint64_t>
+  operator()() const
+  {
+    return {&Component::fromSegment,
+            &Component::toSegment,
+            &Name::appendSegment,
+            Name("/%00%27%10"),
+            10000,
+            &Component::isSegment};
+  }
+};
+
+class SegmentTyped
+{
+public:
+  using ConventionRev = ConventionTyped;
+
+  ConventionTest<uint64_t>
+  operator()() const
+  {
+    return {&Component::fromSegment,
+            &Component::toSegment,
+            &Name::appendSegment,
+            Name("/50=%27%10"),
+            10000,
+            &Component::isSegment};
+  }
+};
+
+class ByteOffsetTyped
+{
+public:
+  using ConventionRev = ConventionTyped;
+
+  ConventionTest<uint64_t>
+  operator()() const
+  {
+    return {&Component::fromByteOffset,
+            &Component::toByteOffset,
+            &Name::appendByteOffset,
+            Name("/52=%00%01%86%A0"),
+            100000,
+            &Component::isByteOffset};
+  }
+};
+
+class VersionMarker
+{
+public:
+  using ConventionRev = ConventionMarker;
+
+  ConventionTest<uint64_t>
+  operator()() const
+  {
+    return {&Component::fromVersion,
+            &Component::toVersion,
+            [] (Name& name, auto version) -> Name& { return name.appendVersion(version); },
+            Name("/%FD%00%0FB%40"),
+            1000000,
+            &Component::isVersion};
+  }
+};
+
+class VersionTyped
+{
+public:
+  using ConventionRev = ConventionTyped;
+
+  ConventionTest<uint64_t>
+  operator()() const
+  {
+    return {&Component::fromVersion,
+            &Component::toVersion,
+            [] (Name& name, auto version) -> Name& { return name.appendVersion(version); },
+            Name("/54=%00%0FB%40"),
+            1000000,
+            &Component::isVersion};
+  }
+};
+
+class TimestampMarker
+{
+public:
+  using ConventionRev = ConventionMarker;
+
+  ConventionTest<time::system_clock::time_point>
+  operator()() const
+  {
+    return {&Component::fromTimestamp,
+            &Component::toTimestamp,
+            [] (Name& name, auto tp) -> Name& { return name.appendTimestamp(tp); },
+            Name("/%FC%00%04%7BE%E3%1B%00%00"),
+            time::getUnixEpoch() + 14600_days, // 40 years
+            &Component::isTimestamp};
+  }
+};
+
+class TimestampTyped
+{
+public:
+  using ConventionRev = ConventionTyped;
+
+  ConventionTest<time::system_clock::time_point>
+  operator()() const
+  {
+    return {&Component::fromTimestamp,
+            &Component::toTimestamp,
+            [] (Name& name, auto tp) -> Name& { return name.appendTimestamp(tp); },
+            Name("/56=%00%04%7BE%E3%1B%00%00"),
+            time::getUnixEpoch() + 14600_days, // 40 years
+            &Component::isTimestamp};
+  }
+};
+
+class SequenceNumberMarker
+{
+public:
+  using ConventionRev = ConventionMarker;
+
+  ConventionTest<uint64_t>
+  operator()() const
+  {
+    return {&Component::fromSequenceNumber,
+            &Component::toSequenceNumber,
+            &Name::appendSequenceNumber,
+            Name("/%FE%00%98%96%80"),
+            10000000,
+            &Component::isSequenceNumber};
+  }
+};
+
+class SequenceNumberTyped
+{
+public:
+  using ConventionRev = ConventionTyped;
+
+  ConventionTest<uint64_t>
+  operator()() const
+  {
+    return {&Component::fromSequenceNumber,
+            &Component::toSequenceNumber,
+            &Name::appendSequenceNumber,
+            Name("/58=%00%98%96%80"),
+            10000000,
+            &Component::isSequenceNumber};
+  }
+};
+
+using ConventionTests = boost::mpl::vector<
+  NumberWithMarker,
+  SegmentMarker,
+  SegmentTyped,
+  ByteOffsetTyped,
+  VersionMarker,
+  VersionTyped,
+  TimestampMarker,
+  TimestampTyped,
+  SequenceNumberMarker,
+  SequenceNumberTyped
+>;
+
+BOOST_FIXTURE_TEST_CASE_TEMPLATE(Convention, T, ConventionTests, T::ConventionRev)
+{
+  Component invalidComponent1;
+  Component invalidComponent2("1234567890");
+
+  auto test = T()();
+  const Name& expected = test.expected;
+
+  Component actualComponent = test.makeComponent(test.value);
+  BOOST_CHECK_EQUAL(actualComponent, expected[0]);
+
+  Name actualName;
+  test.append(actualName, test.value);
+  BOOST_CHECK_EQUAL(actualName, expected);
+
+  BOOST_CHECK_EQUAL(test.isComponent(expected[0]), true);
+  BOOST_CHECK_EQUAL(test.getValue(expected[0]), test.value);
+
+  BOOST_CHECK_EQUAL(test.isComponent(invalidComponent1), false);
+  BOOST_CHECK_EQUAL(test.isComponent(invalidComponent2), false);
+
+  BOOST_CHECK_THROW(test.getValue(invalidComponent1), Component::Error);
+  BOOST_CHECK_THROW(test.getValue(invalidComponent2), Component::Error);
+}
+
+BOOST_AUTO_TEST_SUITE_END() // NamingConvention
+
 BOOST_AUTO_TEST_CASE(Compare)
 {
   const std::vector<Component> comps = {
@@ -272,8 +595,8 @@ BOOST_AUTO_TEST_CASE(Compare)
 
   for (size_t i = 0; i < comps.size(); ++i) {
     for (size_t j = 0; j < comps.size(); ++j) {
-      Component lhs = comps[i];
-      Component rhs = comps[j];
+      const auto& lhs = comps[i];
+      const auto& rhs = comps[j];
       BOOST_CHECK_EQUAL(lhs == rhs, i == j);
       BOOST_CHECK_EQUAL(lhs != rhs, i != j);
       BOOST_CHECK_EQUAL(lhs <  rhs, i <  j);
@@ -283,285 +606,6 @@ BOOST_AUTO_TEST_CASE(Compare)
     }
   }
 }
-
-BOOST_AUTO_TEST_SUITE(CreateFromIterators) // Bug 2490
-
-using ContainerTypes = boost::mpl::vector<std::vector<uint8_t>,
-                                          std::list<uint8_t>,
-                                          std::vector<int8_t>,
-                                          std::list<int8_t>>;
-
-BOOST_AUTO_TEST_CASE_TEMPLATE(ZeroOctet, T, ContainerTypes)
-{
-  T bytes;
-  Component c(bytes.begin(), bytes.end());
-  BOOST_CHECK_EQUAL(c.type(), tlv::GenericNameComponent);
-  BOOST_CHECK_EQUAL(c.value_size(), 0);
-  BOOST_CHECK_EQUAL(c.size(), 2);
-}
-
-BOOST_AUTO_TEST_CASE_TEMPLATE(OneOctet, T, ContainerTypes)
-{
-  T bytes{1};
-  Component c(0x09, bytes.begin(), bytes.end());
-  BOOST_CHECK_EQUAL(c.type(), 0x09);
-  BOOST_CHECK_EQUAL(c.value_size(), 1);
-  BOOST_CHECK_EQUAL(c.size(), 3);
-}
-
-BOOST_AUTO_TEST_CASE_TEMPLATE(FourOctets, T, ContainerTypes)
-{
-  T bytes{1, 2, 3, 4};
-  Component c(0xFCEC, bytes.begin(), bytes.end());
-  BOOST_CHECK_EQUAL(c.type(), 0xFCEC);
-  BOOST_CHECK_EQUAL(c.value_size(), 4);
-  BOOST_CHECK_EQUAL(c.size(), 8);
-}
-
-BOOST_AUTO_TEST_SUITE_END() // CreateFromIterators
-
-BOOST_AUTO_TEST_SUITE(NamingConvention)
-
-template<typename ArgType>
-struct ConventionTest
-{
-  std::function<Component(ArgType)> makeComponent;
-  std::function<ArgType(const Component&)> getValue;
-  std::function<Name&(Name&, ArgType)> append;
-  Name expected;
-  ArgType value;
-  std::function<bool(const Component&)> isComponent;
-};
-
-class ConventionMarker
-{
-};
-
-class ConventionTyped
-{
-public:
-  ConventionTyped()
-  {
-    name::setConventionEncoding(name::Convention::TYPED);
-  }
-
-  ~ConventionTyped()
-  {
-    name::setConventionEncoding(name::Convention::MARKER);
-  }
-};
-
-class NumberWithMarker
-{
-public:
-  using ConventionRev = ConventionMarker;
-
-  ConventionTest<uint64_t>
-  operator()() const
-  {
-    return {bind(&Component::fromNumberWithMarker, 0xAA, _1),
-            bind(&Component::toNumberWithMarker, _1, 0xAA),
-            bind(&Name::appendNumberWithMarker, _1, 0xAA, _2),
-            Name("/%AA%03%E8"),
-            1000,
-            bind(&Component::isNumberWithMarker, _1, 0xAA)};
-  }
-};
-
-class SegmentMarker
-{
-public:
-  using ConventionRev = ConventionMarker;
-
-  ConventionTest<uint64_t>
-  operator()() const
-  {
-    return {&Component::fromSegment,
-            bind(&Component::toSegment, _1),
-            bind(&Name::appendSegment, _1, _2),
-            Name("/%00%27%10"),
-            10000,
-            bind(&Component::isSegment, _1)};
-  }
-};
-
-class SegmentTyped
-{
-public:
-  using ConventionRev = ConventionTyped;
-
-  ConventionTest<uint64_t>
-  operator()() const
-  {
-    return {&Component::fromSegment,
-            bind(&Component::toSegment, _1),
-            bind(&Name::appendSegment, _1, _2),
-            Name("/33=%27%10"),
-            10000,
-            bind(&Component::isSegment, _1)};
-  }
-};
-
-class ByteOffsetTyped
-{
-public:
-  using ConventionRev = ConventionTyped;
-
-  ConventionTest<uint64_t>
-  operator()() const
-  {
-    return {&Component::fromByteOffset,
-            bind(&Component::toByteOffset, _1),
-            bind(&Name::appendByteOffset, _1, _2),
-            Name("/34=%00%01%86%A0"),
-            100000,
-            bind(&Component::isByteOffset, _1)};
-  }
-};
-
-class VersionMarker
-{
-public:
-  using ConventionRev = ConventionMarker;
-
-  ConventionTest<uint64_t>
-  operator()() const
-  {
-    return {&Component::fromVersion,
-            bind(&Component::toVersion, _1),
-            [] (Name& name, uint64_t version) -> Name& { return name.appendVersion(version); },
-            Name("/%FD%00%0FB%40"),
-            1000000,
-            bind(&Component::isVersion, _1)};
-  }
-};
-
-class VersionTyped
-{
-public:
-  using ConventionRev = ConventionTyped;
-
-  ConventionTest<uint64_t>
-  operator()() const
-  {
-    return {&Component::fromVersion,
-            bind(&Component::toVersion, _1),
-            [] (Name& name, uint64_t version) -> Name& { return name.appendVersion(version); },
-            Name("/35=%00%0FB%40"),
-            1000000,
-            bind(&Component::isVersion, _1)};
-  }
-};
-
-class TimestampMarker
-{
-public:
-  using ConventionRev = ConventionMarker;
-
-  ConventionTest<time::system_clock::TimePoint>
-  operator()() const
-  {
-    return {&Component::fromTimestamp,
-            bind(&Component::toTimestamp, _1),
-            [] (Name& name, time::system_clock::TimePoint t) -> Name& { return name.appendTimestamp(t); },
-            Name("/%FC%00%04%7BE%E3%1B%00%00"),
-            time::getUnixEpoch() + 14600_days, // 40 years
-            bind(&Component::isTimestamp, _1)};
-  }
-};
-
-class TimestampTyped
-{
-public:
-  using ConventionRev = ConventionTyped;
-
-  ConventionTest<time::system_clock::TimePoint>
-  operator()() const
-  {
-    return {&Component::fromTimestamp,
-            bind(&Component::toTimestamp, _1),
-            [] (Name& name, time::system_clock::TimePoint t) -> Name& { return name.appendTimestamp(t); },
-            Name("/36=%00%04%7BE%E3%1B%00%00"),
-            time::getUnixEpoch() + 14600_days, // 40 years
-            bind(&Component::isTimestamp, _1)};
-  }
-};
-
-class SequenceNumberMarker
-{
-public:
-  using ConventionRev = ConventionMarker;
-
-  ConventionTest<uint64_t>
-  operator()() const
-  {
-    return {&Component::fromSequenceNumber,
-            bind(&Component::toSequenceNumber, _1),
-            bind(&Name::appendSequenceNumber, _1, _2),
-            Name("/%FE%00%98%96%80"),
-            10000000,
-            bind(&Component::isSequenceNumber, _1)};
-  }
-};
-
-class SequenceNumberTyped
-{
-public:
-  using ConventionRev = ConventionTyped;
-
-  ConventionTest<uint64_t>
-  operator()() const
-  {
-    return {&Component::fromSequenceNumber,
-            bind(&Component::toSequenceNumber, _1),
-            bind(&Name::appendSequenceNumber, _1, _2),
-            Name("/37=%00%98%96%80"),
-            10000000,
-            bind(&Component::isSequenceNumber, _1)};
-  }
-};
-
-using ConventionTests = boost::mpl::vector<
-  NumberWithMarker,
-  SegmentMarker,
-  SegmentTyped,
-  ByteOffsetTyped,
-  VersionMarker,
-  VersionTyped,
-  TimestampMarker,
-  TimestampTyped,
-  SequenceNumberMarker,
-  SequenceNumberTyped
->;
-
-BOOST_FIXTURE_TEST_CASE_TEMPLATE(Convention, T, ConventionTests, T::ConventionRev)
-{
-  Component invalidComponent1;
-  Component invalidComponent2("1234567890");
-
-  auto test = T()();
-
-  const Name& expected = test.expected;
-  BOOST_TEST_MESSAGE("Check " << expected[0]);
-
-  Component actualComponent = test.makeComponent(test.value);
-  BOOST_CHECK_EQUAL(actualComponent, expected[0]);
-
-  Name actualName;
-  test.append(actualName, test.value);
-  BOOST_CHECK_EQUAL(actualName, expected);
-
-  BOOST_CHECK_EQUAL(test.isComponent(expected[0]), true);
-  BOOST_CHECK_EQUAL(test.getValue(expected[0]), test.value);
-
-  BOOST_CHECK_EQUAL(test.isComponent(invalidComponent1), false);
-  BOOST_CHECK_EQUAL(test.isComponent(invalidComponent2), false);
-
-  BOOST_CHECK_THROW(test.getValue(invalidComponent1), Component::Error);
-  BOOST_CHECK_THROW(test.getValue(invalidComponent2), Component::Error);
-}
-
-BOOST_AUTO_TEST_SUITE_END() // NamingConvention
 
 BOOST_AUTO_TEST_SUITE_END() // TestNameComponent
 

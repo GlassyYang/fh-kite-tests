@@ -51,6 +51,7 @@ Producer::start()
                        [] (const auto&, const auto& reason) {
                          NDN_THROW(std::runtime_error("Failed to register prefix: " + reason));
                        });
+  
   // sendKiteRequest();
 }
 
@@ -104,12 +105,10 @@ Producer::sendKiteRequest()
     Interest interest(m_options.prefixPairs[0].producerSuffix);
     interest.setCanBePrefix(false);
     interest.setMustBeFresh(false);
-    Delegation dl;
-    dl.name = Name(m_options.prefixPairs[0].rvPrefix); 
-    dl.preference = tlv::ContentType_KiteAck;
-    DelegationList dll;
-    dll.insert(dl);
-    interest.setForwardingHint(dll);
+    Name fh;
+    fh.append(ndn::kite::KITE_KEYWORD);
+    fh.append(m_options.prefixPairs[0].rvPrefix); 
+    interest.setForwardingHint({fh});
     interest.setHopLimit(100);
     m_pendingInterest = m_face.expressInterest(interest,
                                               [this, &interest] (auto&&, const auto& data) { this->onData(interest, data); },

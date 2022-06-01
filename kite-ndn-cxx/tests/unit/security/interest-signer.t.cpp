@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,10 +20,10 @@
  */
 
 #include "ndn-cxx/security/interest-signer.hpp"
-#include "ndn-cxx/security/signing-helpers.hpp"
 
 #include "tests/boost-test.hpp"
-#include "tests/unit/identity-management-time-fixture.hpp"
+#include "tests/key-chain-fixture.hpp"
+#include "tests/unit/clock-fixture.hpp"
 
 namespace ndn {
 namespace security {
@@ -31,12 +31,16 @@ namespace tests {
 
 using namespace ndn::tests;
 
+class InterestSignerFixture : public ClockFixture, public KeyChainFixture
+{
+};
+
 BOOST_AUTO_TEST_SUITE(Security)
-BOOST_FIXTURE_TEST_SUITE(TestInterestSigner, IdentityManagementTimeFixture)
+BOOST_FIXTURE_TEST_SUITE(TestInterestSigner, InterestSignerFixture)
 
 BOOST_AUTO_TEST_CASE(V02)
 {
-  addIdentity("/test");
+  m_keyChain.createIdentity("/test");
 
   InterestSigner signer(m_keyChain);
   Interest i1 = signer.makeCommandInterest("/hello/world");
@@ -67,14 +71,13 @@ BOOST_AUTO_TEST_CASE(V02)
 
 BOOST_AUTO_TEST_CASE(V03)
 {
-  addIdentity("/test");
+  m_keyChain.createIdentity("/test");
 
   InterestSigner signer(m_keyChain);
   Interest i1("/hello/world");
-  i1.setCanBePrefix(false);
   signer.makeSignedInterest(i1, SigningInfo(),
                             InterestSigner::SigningFlags::WantNonce |
-                              InterestSigner::SigningFlags::WantTime);
+                            InterestSigner::SigningFlags::WantTime);
   BOOST_TEST(i1.isSigned() == true);
   BOOST_TEST_REQUIRE(i1.getName().size() == 3);
   BOOST_TEST_REQUIRE(i1.getSignatureInfo().has_value());
@@ -84,11 +87,10 @@ BOOST_AUTO_TEST_CASE(V03)
   BOOST_TEST(i1.getSignatureInfo()->getSeqNum().has_value() == false);
 
   Interest i2("/hello/world/!");
-  i2.setCanBePrefix(false);
   signer.makeSignedInterest(i2, signingByIdentity("/test"),
                             InterestSigner::SigningFlags::WantNonce |
-                              InterestSigner::SigningFlags::WantTime |
-                              InterestSigner::SigningFlags::WantSeqNum);
+                            InterestSigner::SigningFlags::WantTime |
+                            InterestSigner::SigningFlags::WantSeqNum);
   BOOST_TEST(i2.isSigned() == true);
   BOOST_REQUIRE_EQUAL(i2.getName().size(), 4);
   BOOST_REQUIRE(i2.getSignatureInfo());
@@ -100,7 +102,6 @@ BOOST_AUTO_TEST_CASE(V03)
   advanceClocks(100_s);
 
   Interest i3("/hello/world/2");
-  i3.setCanBePrefix(false);
   signer.makeSignedInterest(i3, SigningInfo(), InterestSigner::SigningFlags::WantSeqNum);
   BOOST_TEST(i3.isSigned() == true);
   BOOST_REQUIRE_EQUAL(i3.getName().size(), 4);

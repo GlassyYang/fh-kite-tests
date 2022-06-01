@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -21,8 +21,8 @@
  * @author Davide Pesavento <davide.pesavento@lip6.fr>
  */
 
-#ifndef NDN_NET_NETWORK_ADDRESS_HPP
-#define NDN_NET_NETWORK_ADDRESS_HPP
+#ifndef NDN_CXX_NET_NETWORK_ADDRESS_HPP
+#define NDN_CXX_NET_NETWORK_ADDRESS_HPP
 
 #include "ndn-cxx/detail/common.hpp"
 
@@ -54,13 +54,14 @@ class NetworkAddress
 {
 public:
   NetworkAddress(AddressFamily family,
-                 boost::asio::ip::address ip,
-                 boost::asio::ip::address broadcast,
+                 const boost::asio::ip::address& ip,
+                 const boost::asio::ip::address& broadcast,
                  uint8_t prefixLength,
                  AddressScope scope,
                  uint32_t flags);
 
-  /** @brief Returns the address family
+  /**
+   * @brief Returns the address family
    */
   AddressFamily
   getFamily() const
@@ -68,7 +69,8 @@ public:
     return m_family;
   }
 
-  /** @brief Returns the IP address (v4 or v6)
+  /**
+   * @brief Returns the IP address (v4 or v6)
    */
   boost::asio::ip::address
   getIp() const
@@ -76,7 +78,8 @@ public:
     return m_ip;
   }
 
-  /** @brief Returns the IP broadcast address
+  /**
+   * @brief Returns the IP broadcast address
    */
   boost::asio::ip::address
   getBroadcast() const
@@ -84,7 +87,8 @@ public:
     return m_broadcast;
   }
 
-  /** @brief Returns the prefix length
+  /**
+   * @brief Returns the prefix length
    */
   uint8_t
   getPrefixLength() const
@@ -92,7 +96,8 @@ public:
     return m_prefixLength;
   }
 
-  /** @brief Returns the address scope
+  /**
+   * @brief Returns the address scope
    */
   AddressScope
   getScope() const
@@ -100,13 +105,22 @@ public:
     return m_scope;
   }
 
-  /** @brief Returns a bitset of platform-specific flags enabled on the address
+  /**
+   * @brief Returns a bitset of platform-specific flags enabled on the address
    */
   uint32_t
   getFlags() const
   {
     return m_flags;
   }
+
+  /**
+   * @brief Returns true if the address is deprecated
+   * @sa RFC 4862
+   * @note Currently implemented only on Linux. Always returns false on other platforms.
+   */
+  bool
+  isDeprecated() const;
 
   friend bool
   operator<(const NetworkAddress& a, const NetworkAddress& b)
@@ -120,7 +134,7 @@ private:
   boost::asio::ip::address m_broadcast;
   uint8_t m_prefixLength;
   AddressScope m_scope;
-  uint32_t m_flags; // IFA_F_* in if_addr.h
+  uint32_t m_flags; // IFA_F_* (linux/if_addr.h) on Linux; zero on other platforms
 };
 
 std::ostream&
@@ -129,4 +143,4 @@ operator<<(std::ostream& os, const NetworkAddress& address);
 } // namespace net
 } // namespace ndn
 
-#endif // NDN_NET_NETWORK_ADDRESS_HPP
+#endif // NDN_CXX_NET_NETWORK_ADDRESS_HPP

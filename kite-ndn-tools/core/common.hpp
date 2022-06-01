@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2020,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -43,10 +43,11 @@
 #include <functional>
 #include <iostream>
 #include <limits>
-#include <map>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -80,8 +81,9 @@ using std::size_t;
 
 using boost::noncopyable;
 
-namespace signal = util::signal;
-
 } // namespace ndn
+
+#define FORWARD_TO_MEM_FN(func) \
+  [this] (auto&&... args) { this->func(std::forward<decltype(args)>(args)...); }
 
 #endif // NDN_TOOLS_CORE_COMMON_HPP

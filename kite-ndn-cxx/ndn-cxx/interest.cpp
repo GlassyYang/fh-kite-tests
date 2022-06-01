@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -27,14 +27,9 @@
 #include "ndn-cxx/security/transform/stream-sink.hpp"
 #include "ndn-cxx/util/random.hpp"
 
-#ifdef NDN_CXX_HAVE_STACKTRACE
-#include <boost/stacktrace/stacktrace.hpp>
-#endif
-
 #include <boost/range/adaptor/reversed.hpp>
 
 #include <cstring>
-#include <iostream>
 #include <sstream>
 
 namespace ndn {
@@ -45,20 +40,12 @@ BOOST_CONCEPT_ASSERT((WireDecodable<Interest>));
 static_assert(std::is_base_of<tlv::Error, Interest::Error>::value,
               "Interest::Error must inherit from tlv::Error");
 
-#ifdef NDN_CXX_HAVE_TESTS
-bool Interest::s_errorIfCanBePrefixUnset = true;
-#endif // NDN_CXX_HAVE_TESTS
-boost::logic::tribool Interest::s_defaultCanBePrefix = boost::logic::indeterminate;
 bool Interest::s_autoCheckParametersDigest = true;
 
 Interest::Interest(const Name& name, time::milliseconds lifetime)
 {
   setName(name);
   setInterestLifetime(lifetime);
-
-  if (!boost::logic::indeterminate(s_defaultCanBePrefix)) {
-    setCanBePrefix(bool(s_defaultCanBePrefix));
-  }
 }
 
 Interest::Interest(const Block& wire)
@@ -68,35 +55,10 @@ Interest::Interest(const Block& wire)
 
 // ---- encode and decode ----
 
-static void
-warnOnceCanBePrefixUnset()
-{
-  static bool didWarn = false;
-  if (!didWarn) {
-    didWarn = true;
-    std::cerr << "WARNING: Interest.CanBePrefix will be set to false in the near future. "
-              << "Please declare a preferred setting via Interest::setDefaultCanBePrefix.\n";
-#ifdef NDN_CXX_HAVE_STACKTRACE
-    if (std::getenv("NDN_CXX_VERBOSE_CANBEPREFIX_UNSET_WARNING") != nullptr) {
-      std::cerr << boost::stacktrace::stacktrace(2, 64);
-    }
-#endif
-  }
-}
-
 template<encoding::Tag TAG>
 size_t
 Interest::wireEncode(EncodingImpl<TAG>& encoder) const
 {
-  if (!m_isCanBePrefixSet) {
-    warnOnceCanBePrefixUnset();
-#ifdef NDN_CXX_HAVE_TESTS
-    if (s_errorIfCanBePrefixUnset) {
-      NDN_THROW(std::logic_error("Interest.CanBePrefix is unset"));
-    }
-#endif // NDN_CXX_HAVE_TESTS
-  }
-
   // Interest = INTEREST-TYPE TLV-LENGTH
   //              Name
   //              [CanBePrefix]
@@ -123,12 +85,12 @@ Interest::wireEncode(EncodingImpl<TAG>& encoder) const
 
   // ApplicationParameters and following elements (in reverse order)
   for (const auto& block : m_parameters | boost::adaptors::reversed) {
-    totalLength += encoder.prependBlock(block);
+    totalLength += prependBlock(encoder, block);
   }
 
   // HopLimit
   if (getHopLimit()) {
-    totalLength += encoder.prependByteArrayBlock(tlv::HopLimit, &*m_hopLimit, 1);
+    totalLength += prependBinaryBlock(encoder, tlv::HopLimit, {*m_hopLimit});
   }
 
   // InterestLifetime
@@ -140,11 +102,12 @@ Interest::wireEncode(EncodingImpl<TAG>& encoder) const
   // Nonce
   getNonce(); // if nonce was unset, this generates a fresh nonce
   BOOST_ASSERT(hasNonce());
-  totalLength += encoder.prependByteArrayBlock(tlv::Nonce, m_nonce->data(), m_nonce->size());
+  totalLength += prependBinaryBlock(encoder, tlv::Nonce, *m_nonce);
 
   // ForwardingHint
-  if (!getForwardingHint().empty()) {
-    totalLength += getForwardingHint().wireEncode(encoder);
+  if (!m_forwardingHint.empty()) {
+    totalLength += prependNestedBlock(encoder, tlv::ForwardingHint,
+                                      m_forwardingHint.begin(), m_forwardingHint.end());
   }
 
   // MustBeFresh
@@ -218,9 +181,8 @@ Interest::wireDecode(const Block& wire)
   }
   m_name = std::move(tempName);
 
-  m_isCanBePrefixSet = true; // don't trigger warning from decoded packet
   m_canBePrefix = m_mustBeFresh = false;
-  m_forwardingHint = {};
+  m_forwardingHint.clear();
   m_nonce.reset();
   m_interestLifetime = DEFAULT_INTEREST_LIFETIME;
   m_hopLimit.reset();
@@ -255,7 +217,37 @@ Interest::wireDecode(const Block& wire)
         if (lastElement >= 4) {
           NDN_THROW(Error("ForwardingHint element is out of order"));
         }
-        m_forwardingHint.wireDecode(*element);
+        // ForwardingHint = FORWARDING-HINT-TYPE TLV-LENGTH 1*Name
+        // [previous format]
+        // ForwardingHint = FORWARDING-HINT-TYPE TLV-LENGTH 1*Delegation
+        // Delegation = DELEGATION-TYPE TLV-LENGTH Preference Name
+        element->parse();
+        for (const auto& del : element->elements()) {
+          switch (del.type()) {
+            case tlv::Name:
+              try {
+                m_forwardingHint.emplace_back(del);
+              }
+              catch (const tlv::Error&) {
+                NDN_THROW_NESTED(Error("Invalid Name in ForwardingHint"));
+              }
+              break;
+            case tlv::LinkDelegation:
+              try {
+                del.parse();
+                m_forwardingHint.emplace_back(del.get(tlv::Name));
+              }
+              catch (const tlv::Error&) {
+                NDN_THROW_NESTED(Error("Invalid Name in ForwardingHint.Delegation"));
+              }
+              break;
+            default:
+              if (tlv::isCriticalType(del.type())) {
+                NDN_THROW(Error("Unexpected TLV-TYPE " + to_string(del.type()) + " while decoding ForwardingHint"));
+              }
+              break;
+          }
+        }
         lastElement = 4;
         break;
       }
@@ -390,9 +382,9 @@ Interest::setName(const Name& name)
 }
 
 Interest&
-Interest::setForwardingHint(const DelegationList& value)
+Interest::setForwardingHint(std::vector<Name> value)
 {
-  m_forwardingHint = value;
+  m_forwardingHint = std::move(value);
   m_wire.reset();
   return *this;
 }
@@ -463,7 +455,7 @@ Interest::setHopLimit(optional<uint8_t> hopLimit)
   return *this;
 }
 
-void
+Interest&
 Interest::setApplicationParametersInternal(Block parameters)
 {
   parameters.encode(); // ensure we have wire encoding needed by computeParametersDigest()
@@ -474,6 +466,10 @@ Interest::setApplicationParametersInternal(Block parameters)
     BOOST_ASSERT(m_parameters[0].type() == tlv::ApplicationParameters);
     m_parameters[0] = std::move(parameters);
   }
+
+  addOrReplaceParametersDigestComponent();
+  m_wire.reset();
+  return *this;
 }
 
 Interest&
@@ -484,14 +480,17 @@ Interest::setApplicationParameters(const Block& parameters)
   }
 
   if (parameters.type() == tlv::ApplicationParameters) {
-    setApplicationParametersInternal(parameters);
+    return setApplicationParametersInternal(parameters);
   }
   else {
-    setApplicationParametersInternal(Block(tlv::ApplicationParameters, parameters));
+    return setApplicationParametersInternal({tlv::ApplicationParameters, parameters});
   }
-  addOrReplaceParametersDigestComponent();
-  m_wire.reset();
-  return *this;
+}
+
+Interest&
+Interest::setApplicationParameters(span<const uint8_t> value)
+{
+  return setApplicationParametersInternal(makeBinaryBlock(tlv::ApplicationParameters, value));
 }
 
 Interest&
@@ -501,10 +500,7 @@ Interest::setApplicationParameters(const uint8_t* value, size_t length)
     NDN_THROW(std::invalid_argument("ApplicationParameters buffer cannot be nullptr"));
   }
 
-  setApplicationParametersInternal(makeBinaryBlock(tlv::ApplicationParameters, value, length));
-  addOrReplaceParametersDigestComponent();
-  m_wire.reset();
-  return *this;
+  return setApplicationParameters(make_span(value, length));
 }
 
 Interest&
@@ -514,10 +510,7 @@ Interest::setApplicationParameters(ConstBufferPtr value)
     NDN_THROW(std::invalid_argument("ApplicationParameters buffer cannot be nullptr"));
   }
 
-  setApplicationParametersInternal(Block(tlv::ApplicationParameters, std::move(value)));
-  addOrReplaceParametersDigestComponent();
-  m_wire.reset();
-  return *this;
+  return setApplicationParametersInternal({tlv::ApplicationParameters, std::move(value)});
 }
 
 Interest&
@@ -597,12 +590,8 @@ Interest::getSignatureValue() const
 }
 
 Interest&
-Interest::setSignatureValue(ConstBufferPtr value)
+Interest::setSignatureValueInternal(Block sigValue)
 {
-  if (value == nullptr) {
-    NDN_THROW(std::invalid_argument("InterestSignatureValue buffer cannot be nullptr"));
-  }
-
   // Ensure presence of InterestSignatureInfo
   auto infoIt = findFirstParameter(tlv::InterestSignatureInfo);
   if (infoIt == m_parameters.end()) {
@@ -613,27 +602,42 @@ Interest::setSignatureValue(ConstBufferPtr value)
     return block.type() == tlv::InterestSignatureValue;
   });
 
-  Block valueBlock(tlv::InterestSignatureValue, std::move(value));
   if (valueIt != m_parameters.end()) {
-    if (*valueIt == valueBlock) {
+    if (*valueIt == sigValue) {
       // New InterestSignatureValue is the same as the old InterestSignatureValue
       return *this;
     }
 
     // Replace existing InterestSignatureValue
-    *valueIt = std::move(valueBlock);
+    *valueIt = std::move(sigValue);
   }
   else {
     // Place after first InterestSignatureInfo element
-    valueIt = m_parameters.insert(std::next(infoIt), std::move(valueBlock));
+    valueIt = m_parameters.insert(std::next(infoIt), std::move(sigValue));
   }
 
-  // computeParametersDigest needs encoded SignatureValue
+  // computeParametersDigest needs encoded InterestSignatureValue
   valueIt->encode();
 
   addOrReplaceParametersDigestComponent();
   m_wire.reset();
   return *this;
+}
+
+Interest&
+Interest::setSignatureValue(span<const uint8_t> value)
+{
+  return setSignatureValueInternal(makeBinaryBlock(tlv::InterestSignatureValue, value));
+}
+
+Interest&
+Interest::setSignatureValue(ConstBufferPtr value)
+{
+  if (value == nullptr) {
+    NDN_THROW(std::invalid_argument("InterestSignatureValue buffer cannot be nullptr"));
+  }
+
+  return setSignatureValueInternal({tlv::InterestSignatureValue, std::move(value)});
 }
 
 InputBuffers
@@ -645,15 +649,15 @@ Interest::extractSignedRanges() const
   wireEncode();
 
   // Get Interest name minus any ParametersSha256DigestComponent
-  // Name is guaranteed to be non-empty if wireEncode does not throw
+  // Name is guaranteed to be non-empty if wireEncode() does not throw
   BOOST_ASSERT(!m_name.empty());
   if (m_name[-1].type() != tlv::ParametersSha256DigestComponent) {
     NDN_THROW(Error("Interest Name must end with a ParametersSha256DigestComponent"));
   }
 
-  bufs.emplace_back(m_name[0].wire(), std::distance(m_name[0].wire(), m_name[-1].wire()));
+  bufs.emplace_back(m_name[0].data(), m_name[-1].data());
 
-  // Ensure has InterestSignatureInfo field
+  // Ensure InterestSignatureInfo element is present
   auto sigInfoIt = findFirstParameter(tlv::InterestSignatureInfo);
   if (sigInfoIt == m_parameters.end()) {
     NDN_THROW(Error("Interest missing InterestSignatureInfo"));
@@ -662,9 +666,10 @@ Interest::extractSignedRanges() const
   // Get range from ApplicationParameters to InterestSignatureValue
   // or end of parameters (whichever is first)
   BOOST_ASSERT(!m_parameters.empty() && m_parameters.begin()->type() == tlv::ApplicationParameters);
-  auto sigValueIt = findFirstParameter(tlv::InterestSignatureValue);
-  bufs.emplace_back(m_parameters.begin()->wire(),
-                    std::distance(m_parameters.begin()->begin(), std::prev(sigValueIt)->end()));
+  auto lastSignedIt = std::prev(findFirstParameter(tlv::InterestSignatureValue));
+  // Note: we assume that both iterators point to the same underlying buffer
+  bufs.emplace_back(m_parameters.front().begin(), lastSignedIt->end());
+
   return bufs;
 }
 
@@ -701,7 +706,7 @@ Interest::computeParametersDigest() const
   in >> digestFilter(DigestAlgorithm::SHA256) >> streamSink(out);
 
   for (const auto& block : m_parameters) {
-    in.write(block.wire(), block.size());
+    in.write(block);
   }
   in.end();
 
@@ -714,7 +719,7 @@ Interest::addOrReplaceParametersDigestComponent()
   BOOST_ASSERT(hasApplicationParameters());
 
   ssize_t digestIndex = findParametersDigestComponent(getName());
-  auto digestComponent = name::Component::fromParametersSha256Digest(computeParametersDigest());
+  name::Component digestComponent(tlv::ParametersSha256DigestComponent, computeParametersDigest());
 
   if (digestIndex == -1) {
     // no existing digest components, append one

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -32,7 +32,7 @@
 namespace ndn {
 namespace util {
 
-class DummyClientFace::Transport : public ndn::Transport
+class DummyClientFace::Transport final : public ndn::Transport
 {
 public:
   void
@@ -45,40 +45,24 @@ public:
   }
 
   void
-  close() override
+  send(const Block& block) final
+  {
+    onSendBlock(block);
+  }
+
+  void
+  close() final
   {
   }
 
   void
-  pause() override
+  pause() final
   {
   }
 
   void
-  resume() override
+  resume() final
   {
-  }
-
-  void
-  send(const Block& wire) override
-  {
-    onSendBlock(wire);
-  }
-
-  void
-  send(const Block& header, const Block& payload) override
-  {
-    EncodingBuffer encoder(header.size() + payload.size(), header.size() + payload.size());
-    encoder.appendByteArray(header.wire(), header.size());
-    encoder.appendByteArray(payload.wire(), payload.size());
-
-    this->send(encoder.block());
-  }
-
-  boost::asio::io_service&
-  getIoService()
-  {
-    return *m_ioService;
   }
 
 public:
@@ -133,19 +117,16 @@ DummyClientFace::~DummyClientFace()
 void
 DummyClientFace::construct(const Options& options)
 {
-  static_pointer_cast<Transport>(getTransport())->onSendBlock.connect([this] (const Block& blockFromDaemon) {
-    Block packet(blockFromDaemon);
+  static_pointer_cast<Transport>(getTransport())->onSendBlock.connect([this] (Block packet) {
     packet.encode();
     lp::Packet lpPacket(packet);
-
-    Buffer::const_iterator begin, end;
-    std::tie(begin, end) = lpPacket.get<lp::FragmentField>();
-    Block block(&*begin, std::distance(begin, end));
+    auto frag = lpPacket.get<lp::FragmentField>();
+    Block block({frag.first, frag.second});
 
     if (block.type() == tlv::Interest) {
-      shared_ptr<Interest> interest = make_shared<Interest>(block);
+      auto interest = make_shared<Interest>(block);
       if (lpPacket.has<lp::NackField>()) {
-        shared_ptr<lp::Nack> nack = make_shared<lp::Nack>(std::move(*interest));
+        auto nack = make_shared<lp::Nack>(std::move(*interest));
         nack->setHeader(lpPacket.get<lp::NackField>());
         addTagFromField<lp::CongestionMarkTag, lp::CongestionMarkField>(*nack, lpPacket);
         onSendNack(*nack);
@@ -157,7 +138,7 @@ DummyClientFace::construct(const Options& options)
       }
     }
     else if (block.type() == tlv::Data) {
-      shared_ptr<Data> data = make_shared<Data>(block);
+      auto data = make_shared<Data>(block);
       addTagFromField<lp::CachePolicyTag, lp::CachePolicyField>(*data, lpPacket);
       addTagFromField<lp::CongestionMarkTag, lp::CongestionMarkField>(*data, lpPacket);
       onSendData(*data);
@@ -168,7 +149,7 @@ DummyClientFace::construct(const Options& options)
     this->enablePacketLogging();
 
   if (options.enableRegistrationReply)
-    this->enableRegistrationReply();
+    this->enableRegistrationReply(options.registrationReplyFaceId);
 
   m_processEventsOverride = options.processEventsOverride;
 
@@ -222,17 +203,23 @@ DummyClientFace::enablePacketLogging()
 }
 
 void
-DummyClientFace::enableRegistrationReply()
+DummyClientFace::enableRegistrationReply(uint64_t faceId)
 {
-  onSendInterest.connect([this] (const Interest& interest) {
-    static const Name localhostRegistration("/localhost/nfd/rib");
-    if (!localhostRegistration.isPrefixOf(interest.getName()))
+  onSendInterest.connect([=] (const Interest& interest) {
+    static const Name localhostRibPrefix("/localhost/nfd/rib");
+    static const name::Component registerVerb("register");
+    const auto& name = interest.getName();
+    if (name.size() <= 4 || !localhostRibPrefix.isPrefixOf(name))
       return;
 
-    nfd::ControlParameters params(interest.getName().get(-5).blockFromValue());
-    params.setFaceId(1);
-    params.setOrigin(nfd::ROUTE_ORIGIN_APP);
-    if (interest.getName().get(3) == name::Component("register")) {
+    nfd::ControlParameters params(name[4].blockFromValue());
+    if (!params.hasFaceId()) {
+      params.setFaceId(faceId);
+    }
+    if (!params.hasOrigin()) {
+      params.setOrigin(nfd::ROUTE_ORIGIN_APP);
+    }
+    if (!params.hasCost() && name[3] == registerVerb) {
       params.setCost(0);
     }
 
@@ -240,11 +227,9 @@ DummyClientFace::enableRegistrationReply()
     resp.setCode(200);
     resp.setBody(params.wireEncode());
 
-    shared_ptr<Data> data = make_shared<Data>(interest.getName());
+    shared_ptr<Data> data = make_shared<Data>(name);
     data->setContent(resp.wireEncode());
-
     m_keyChain.sign(*data, security::SigningInfo(security::SigningInfo::SIGNER_TYPE_SHA256));
-
     this->getIoService().post([this, data] { this->receive(*data); });
   });
 }
@@ -278,7 +263,7 @@ DummyClientFace::receive(const lp::Nack& nack)
   lp::Packet lpPacket;
   lpPacket.add<lp::NackField>(nack.getHeader());
   Block interest = nack.getInterest().wireEncode();
-  lpPacket.add<lp::FragmentField>(make_pair(interest.begin(), interest.end()));
+  lpPacket.add<lp::FragmentField>({interest.begin(), interest.end()});
 
   addFieldFromTag<lp::IncomingFaceIdField, lp::IncomingFaceIdTag>(lpPacket, nack);
   addFieldFromTag<lp::CongestionMarkField, lp::CongestionMarkTag>(lpPacket, nack);

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_IMPL_NAME_COMPONENT_TYPES_HPP
-#define NDN_IMPL_NAME_COMPONENT_TYPES_HPP
+#ifndef NDN_CXX_IMPL_NAME_COMPONENT_TYPES_HPP
+#define NDN_CXX_IMPL_NAME_COMPONENT_TYPES_HPP
 
 #include "ndn-cxx/name-component.hpp"
 #include "ndn-cxx/util/sha256.hpp"
@@ -31,7 +31,7 @@
 
 namespace ndn {
 namespace name {
-namespace detail {
+namespace {
 
 /** \brief Declare rules for a NameComponent type.
  */
@@ -55,18 +55,18 @@ public:
    *  If \p comp is the maximum possible value of this component type, return true to indicate
    *  that the successor should have a greater TLV-TYPE.
    */
-  virtual std::pair<bool, Component>
+  virtual std::tuple<bool, Component>
   getSuccessor(const Component& comp) const
   {
-    return {false, getSuccessorImpl(comp).second};
+    return {false, Component(std::get<Block>(getSuccessorImpl(comp)))};
   }
 
   /** \brief Return the minimum allowable TLV-VALUE of this component type.
    */
-  virtual const std::vector<uint8_t>&
+  virtual span<const uint8_t>
   getMinValue() const
   {
-    static std::vector<uint8_t> value;
+    static const std::vector<uint8_t> value;
     return value;
   }
 
@@ -109,11 +109,12 @@ public:
   }
 
 protected:
-  /** \brief Calculate the successor of \p comp, extending TLV-LENGTH if value overflows.
-   *  \return whether TLV-LENGTH was extended, and the successor
+  /**
+   * \brief Calculate the successor of \p comp, extending TLV-LENGTH if value overflows.
+   * \return whether TLV-LENGTH was extended, and the successor
    */
-  std::pair<bool, Block>
-  getSuccessorImpl(const Component& comp) const
+  static std::tuple<bool, Block>
+  getSuccessorImpl(const Component& comp)
   {
     EncodingBuffer encoder(comp.size() + 9, 9);
     // leave room for additional byte when TLV-VALUE overflows, and for TLV-LENGTH size increase
@@ -122,14 +123,14 @@ protected:
     size_t i = comp.value_size();
     for (; isOverflow && i > 0; i--) {
       uint8_t newValue = static_cast<uint8_t>((comp.value()[i - 1] + 1) & 0xFF);
-      encoder.prependByte(newValue);
+      encoder.prependBytes({newValue});
       isOverflow = (newValue == 0);
     }
-    encoder.prependByteArray(comp.value(), i);
+    encoder.prependBytes({comp.value(), i});
 
     if (isOverflow) {
       // new name component has to be extended
-      encoder.appendByte(0);
+      encoder.appendBytes({0});
     }
 
     encoder.prependVarNumber(encoder.size());
@@ -137,10 +138,11 @@ protected:
     return {isOverflow, encoder.block()};
   }
 
-  /** \brief Write TLV-VALUE as `<escaped-value>` of NDN URI syntax.
+  /**
+   * \brief Write TLV-VALUE as `<escaped-value>` of NDN URI syntax.
    */
-  void
-  writeUriEscapedValue(std::ostream& os, const Component& comp) const
+  static void
+  writeUriEscapedValue(std::ostream& os, const Component& comp)
   {
     bool isAllPeriods = std::all_of(comp.value_begin(), comp.value_end(),
                                     [] (uint8_t x) { return x == '.'; });
@@ -179,12 +181,6 @@ public:
   {
   }
 
-  bool
-  match(const Component& comp) const
-  {
-    return comp.type() == m_type && comp.value_size() == util::Sha256::DIGEST_SIZE;
-  }
-
   void
   check(const Component& comp) const final
   {
@@ -194,34 +190,19 @@ public:
     }
   }
 
-  Component
-  create(ConstBufferPtr value) const
-  {
-    return Component(Block(m_type, std::move(value)));
-  }
-
-  Component
-  create(const uint8_t* value, size_t valueSize) const
-  {
-    return Component(makeBinaryBlock(m_type, value, valueSize));
-  }
-
-  std::pair<bool, Component>
+  std::tuple<bool, Component>
   getSuccessor(const Component& comp) const final
   {
     bool isExtended = false;
     Block successor;
     std::tie(isExtended, successor) = getSuccessorImpl(comp);
-    if (isExtended) {
-      return {true, comp};
-    }
-    return {false, Component(successor)};
+    return {isExtended, isExtended ? comp : Component(successor)};
   }
 
-  const std::vector<uint8_t>&
+  span<const uint8_t>
   getMinValue() const final
   {
-    static std::vector<uint8_t> value(util::Sha256::DIGEST_SIZE);
+    static const std::vector<uint8_t> value(util::Sha256::DIGEST_SIZE);
     return value;
   }
 
@@ -241,14 +222,14 @@ public:
     catch (const StringHelperError&) {
       NDN_THROW(Error("Cannot convert to " + m_typeName + " (invalid hex encoding)"));
     }
-    return Component(m_type, std::move(value));
+    return {m_type, std::move(value)};
   }
 
   void
   writeUri(std::ostream& os, const Component& comp) const final
   {
     os << m_uriPrefix << '=';
-    printHex(os, comp.value(), comp.value_size(), false);
+    printHex(os, comp.value_bytes(), false);
   }
 
 private:
@@ -257,23 +238,7 @@ private:
   const std::string m_uriPrefix;
 };
 
-inline const Sha256ComponentType&
-getComponentType1()
-{
-  static const Sha256ComponentType ct1(tlv::ImplicitSha256DigestComponent,
-                                       "ImplicitSha256DigestComponent", "sha256digest");
-  return ct1;
-}
-
-inline const Sha256ComponentType&
-getComponentType2()
-{
-  static const Sha256ComponentType ct2(tlv::ParametersSha256DigestComponent,
-                                       "ParametersSha256DigestComponent", "params-sha256");
-  return ct2;
-}
-
-/** \brief Rules for a component type holding a nonNegativeInteger value, written as
+/** \brief Rules for a component type holding a NonNegativeInteger value, written as
  *         a decimal number in URI representation.
  */
 class DecimalComponentType final : public ComponentType
@@ -288,7 +253,7 @@ public:
 
   // NOTE:
   // We do not override check() and ensure that the component value is a well-formed
-  // nonNegativeInteger, because the application may be using the same typed component
+  // NonNegativeInteger, because the application may be using the same typed component
   // with different syntax and semantics.
 
   const char*
@@ -333,14 +298,16 @@ private:
   const std::string m_uriPrefix;
 };
 
-/** \brief Rules regarding NameComponent types.
+/**
+ * \brief Encapsulates the rules for different NameComponent types.
  */
 class ComponentTypeTable : noncopyable
 {
 public:
   ComponentTypeTable();
 
-  /** \brief Retrieve ComponentType by TLV-TYPE.
+  /**
+   * \brief Retrieve a ComponentType by its TLV-TYPE.
    */
   const ComponentType&
   get(uint32_t type) const
@@ -351,7 +318,8 @@ public:
     return *m_table[type];
   }
 
-  /** \brief Retrieve ComponentType by alternate URI prefix.
+  /**
+   * \brief Retrieve a ComponentType by its alternate URI prefix.
    */
   const ComponentType*
   findByUriPrefix(const std::string& prefix) const
@@ -375,7 +343,7 @@ private:
 
 private:
   const ComponentType m_baseType;
-  std::array<const ComponentType*, 38> m_table;
+  std::array<const ComponentType*, 60> m_table;
   std::unordered_map<std::string, const ComponentType*> m_uriPrefixes;
 };
 
@@ -384,25 +352,33 @@ ComponentTypeTable::ComponentTypeTable()
 {
   m_table.fill(nullptr);
 
-  set(tlv::ImplicitSha256DigestComponent, getComponentType1());
-  set(tlv::ParametersSha256DigestComponent, getComponentType2());
+  static const Sha256ComponentType ct1(tlv::ImplicitSha256DigestComponent,
+                                       "ImplicitSha256DigestComponent", "sha256digest");
+  set(tlv::ImplicitSha256DigestComponent, ct1);
+  static const Sha256ComponentType ct2(tlv::ParametersSha256DigestComponent,
+                                       "ParametersSha256DigestComponent", "params-sha256");
+  set(tlv::ParametersSha256DigestComponent, ct2);
 
   static const GenericNameComponentType ct8;
   set(tlv::GenericNameComponent, ct8);
 
-  static const DecimalComponentType ct33(tlv::SegmentNameComponent, "SegmentNameComponent", "seg");
-  set(tlv::SegmentNameComponent, ct33);
-  static const DecimalComponentType ct34(tlv::ByteOffsetNameComponent, "ByteOffsetNameComponent", "off");
-  set(tlv::ByteOffsetNameComponent, ct34);
-  static const DecimalComponentType ct35(tlv::VersionNameComponent, "VersionNameComponent", "v");
-  set(tlv::VersionNameComponent, ct35);
-  static const DecimalComponentType ct36(tlv::TimestampNameComponent, "TimestampNameComponent", "t");
-  set(tlv::TimestampNameComponent, ct36);
-  static const DecimalComponentType ct37(tlv::SequenceNumNameComponent, "SequenceNumNameComponent", "seq");
-  set(tlv::SequenceNumNameComponent, ct37);
+  static const ComponentType ct32;
+  set(tlv::KeywordNameComponent, ct32);
+
+  static const DecimalComponentType ct50(tlv::SegmentNameComponent, "SegmentNameComponent", "seg");
+  set(tlv::SegmentNameComponent, ct50);
+  static const DecimalComponentType ct52(tlv::ByteOffsetNameComponent, "ByteOffsetNameComponent", "off");
+  set(tlv::ByteOffsetNameComponent, ct52);
+  static const DecimalComponentType ct54(tlv::VersionNameComponent, "VersionNameComponent", "v");
+  set(tlv::VersionNameComponent, ct54);
+  static const DecimalComponentType ct56(tlv::TimestampNameComponent, "TimestampNameComponent", "t");
+  set(tlv::TimestampNameComponent, ct56);
+  static const DecimalComponentType ct58(tlv::SequenceNumNameComponent, "SequenceNumNameComponent", "seq");
+  set(tlv::SequenceNumNameComponent, ct58);
 }
 
-/** \brief Get the global ComponentTypeTable.
+/**
+ * \brief Get the global ComponentTypeTable.
  */
 inline const ComponentTypeTable&
 getComponentTypeTable()
@@ -411,8 +387,8 @@ getComponentTypeTable()
   return ctt;
 }
 
-} // namespace detail
+} // namespace
 } // namespace name
 } // namespace ndn
 
-#endif // NDN_IMPL_NAME_COMPONENT_TYPES_HPP
+#endif // NDN_CXX_IMPL_NAME_COMPONENT_TYPES_HPP

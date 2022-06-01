@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,37 +20,36 @@
  */
 
 #include "tests/unit/security/pib/pib-data-fixture.hpp"
+#include "ndn-cxx/security/pib/impl/pib-memory.hpp"
 
-// #include "ndn-cxx/security/pib/pib-memory.hpp"
+// #include "ndn-cxx/security/tpm/impl/back-end-mem.hpp"
 // #include "ndn-cxx/security/tpm/tpm.hpp"
-// #include "ndn-cxx/security/tpm/back-end-mem.hpp"
+// #include "ndn-cxx/util/string-helper.hpp"
 
-// #include <fstream>
+// #include "tests/boost-test.hpp"
+
+// #include <iostream>
 
 namespace ndn {
 namespace security {
+namespace pib {
 namespace tests {
 
 // class TestCertDataGenerator
 // {
 // public:
-//   TestCertDataGenerator()
-//     : tpm("test", "test", make_unique<tpm::BackEndMem>())
-//   {
-//   }
-
 //   void
 //   printTestDataForId(const std::string& prefix, const Name& id)
 //   {
-//     for (int keyId : {1, 2}) {
+//     for (auto keyId : {1u, 2u}) {
 //       Name keyName = tpm.createKey(id, EcKeyParams(name::Component::fromNumber(keyId)));
 
-//       for (int certVersion : {1, 2}) {
+//       for (auto certVersion : {1u, 2u}) {
 //         Name certName = keyName;
 //         certName
 //           .append("issuer")
 //           .appendVersion(certVersion);
-//         v2::Certificate cert;
+//         Certificate cert;
 //         cert.setName(certName);
 //         cert.setFreshnessPeriod(1_h);
 //         cert.setContent(tpm.getPublicKey(keyName));
@@ -58,15 +57,14 @@ namespace tests {
 //         // TODO: sign using KeyChain
 //         SignatureInfo info;
 //         info.setSignatureType(tlv::SignatureSha256WithEcdsa);
-//         info.setKeyLocator(KeyLocator(keyName));
+//         info.setKeyLocator(keyName);
 //         info.setValidityPeriod(ValidityPeriod(time::fromIsoString("20170102T000000"),
 //                                               time::fromIsoString("20180102T000000")));
 //         cert.setSignatureInfo(info);
 
 //         EncodingBuffer buf;
 //         cert.wireEncode(buf, true);
-
-//         cert.setSignatureValue(tpm.sign(buf.buf(), buf.size(), keyName, DigestAlgorithm::SHA256));
+//         cert.setSignatureValue(tpm.sign({buf}, keyName, DigestAlgorithm::SHA256));
 
 //         printBytes(prefix + "_KEY" + to_string(keyId) + "_CERT" + to_string(certVersion),
 //                    cert.wireEncode());
@@ -75,24 +73,12 @@ namespace tests {
 //   }
 
 //   static void
-//   printBytes(const std::string& name, const Block& block)
-//   {
-//     printBytes(name, block.wire(), block.size());
-//   }
-
-//   static void
-//   printBytes(const std::string& name, const Buffer& buffer)
-//   {
-//     printBytes(name, buffer.buf(), buffer.size());
-//   }
-
-//   static void
-//   printBytes(const std::string& name, const uint8_t* buf, size_t size)
+//   printBytes(const std::string& name, span<const uint8_t> bytes)
 //   {
 //     std::cout << "\nconst uint8_t " << name << "[] = {\n"
 //               << "  ";
 
-//     std::string hex = toHex(buf, size);
+//     std::string hex = toHex(bytes);
 
 //     for (size_t i = 0; i < hex.size(); i++) {
 //       if (i > 0 && i % 40 == 0)
@@ -101,16 +87,16 @@ namespace tests {
 //       std::cout << "0x" << hex[i];
 //       std::cout << hex[++i];
 
-//       if ((i + 1) != hex.size())
+//       if (i + 1 != hex.size())
 //         std::cout << ", ";
 //     }
 //     std::cout << "\n"
 //               << "};" << std::endl;
 //   }
 
-// public:
+// private:
 //   pib::PibMemory pib;
-//   Tpm tpm;
+//   Tpm tpm{"test", "test", make_unique<tpm::BackEndMem>()};
 // };
 
 // // The test data can be generated using this test case
@@ -369,15 +355,15 @@ const uint8_t ID2_KEY2_CERT2[] = {
 };
 
 PibDataFixture::PibDataFixture()
-  : id1Key1Cert1(Block(ID1_KEY1_CERT1, sizeof(ID1_KEY1_CERT1)))
-  , id1Key1Cert2(Block(ID1_KEY1_CERT2, sizeof(ID1_KEY1_CERT2)))
-  , id1Key2Cert1(Block(ID1_KEY2_CERT1, sizeof(ID1_KEY2_CERT1)))
-  , id1Key2Cert2(Block(ID1_KEY2_CERT2, sizeof(ID1_KEY2_CERT2)))
+  : id1Key1Cert1(Block(ID1_KEY1_CERT1))
+  , id1Key1Cert2(Block(ID1_KEY1_CERT2))
+  , id1Key2Cert1(Block(ID1_KEY2_CERT1))
+  , id1Key2Cert2(Block(ID1_KEY2_CERT2))
 
-  , id2Key1Cert1(Block(ID2_KEY1_CERT1, sizeof(ID2_KEY1_CERT1)))
-  , id2Key1Cert2(Block(ID2_KEY1_CERT2, sizeof(ID2_KEY1_CERT2)))
-  , id2Key2Cert1(Block(ID2_KEY2_CERT1, sizeof(ID2_KEY2_CERT1)))
-  , id2Key2Cert2(Block(ID2_KEY2_CERT2, sizeof(ID2_KEY2_CERT2)))
+  , id2Key1Cert1(Block(ID2_KEY1_CERT1))
+  , id2Key1Cert2(Block(ID2_KEY1_CERT2))
+  , id2Key2Cert1(Block(ID2_KEY2_CERT1))
+  , id2Key2Cert2(Block(ID2_KEY2_CERT2))
 
   , id1(id1Key1Cert1.getIdentity())
   , id2(id2Key1Cert1.getIdentity())
@@ -393,36 +379,42 @@ PibDataFixture::PibDataFixture()
   , id2Key1(id2Key1Cert1.getPublicKey())
   , id2Key2(id2Key2Cert1.getPublicKey())
 {
-  BOOST_ASSERT(id1Key1Cert1.getPublicKey() == id1Key1Cert2.getPublicKey());
-  BOOST_ASSERT(id1Key2Cert1.getPublicKey() == id1Key2Cert2.getPublicKey());
-  BOOST_ASSERT(id2Key1Cert1.getPublicKey() == id2Key1Cert2.getPublicKey());
-  BOOST_ASSERT(id2Key2Cert1.getPublicKey() == id2Key2Cert2.getPublicKey());
-
-  BOOST_ASSERT(id1Key1Cert1.getPublicKey() == id1Key1);
-  BOOST_ASSERT(id1Key1Cert2.getPublicKey() == id1Key1);
-  BOOST_ASSERT(id1Key2Cert1.getPublicKey() == id1Key2);
-  BOOST_ASSERT(id1Key2Cert2.getPublicKey() == id1Key2);
-
-  BOOST_ASSERT(id2Key1Cert1.getPublicKey() == id2Key1);
-  BOOST_ASSERT(id2Key1Cert2.getPublicKey() == id2Key1);
-  BOOST_ASSERT(id2Key2Cert1.getPublicKey() == id2Key2);
-  BOOST_ASSERT(id2Key2Cert2.getPublicKey() == id2Key2);
-
   BOOST_ASSERT(id1Key1Cert2.getIdentity() == id1);
   BOOST_ASSERT(id1Key2Cert1.getIdentity() == id1);
   BOOST_ASSERT(id1Key2Cert2.getIdentity() == id1);
-
   BOOST_ASSERT(id2Key1Cert2.getIdentity() == id2);
   BOOST_ASSERT(id2Key2Cert1.getIdentity() == id2);
   BOOST_ASSERT(id2Key2Cert2.getIdentity() == id2);
 
   BOOST_ASSERT(id1Key1Cert2.getKeyName() == id1Key1Name);
   BOOST_ASSERT(id1Key2Cert2.getKeyName() == id1Key2Name);
-
   BOOST_ASSERT(id2Key1Cert2.getKeyName() == id2Key1Name);
   BOOST_ASSERT(id2Key2Cert2.getKeyName() == id2Key2Name);
+
+  BOOST_ASSERT(id1Key1Cert2.getPublicKey() == id1Key1);
+  BOOST_ASSERT(id1Key2Cert2.getPublicKey() == id1Key2);
+  BOOST_ASSERT(id2Key1Cert2.getPublicKey() == id2Key1);
+  BOOST_ASSERT(id2Key2Cert2.getPublicKey() == id2Key2);
+}
+
+shared_ptr<PibImpl>
+PibDataFixture::makePibWithIdentity(const Name& idName)
+{
+  auto pib = std::make_shared<PibMemory>();
+  pib->addIdentity(idName);
+  return pib;
+}
+
+shared_ptr<PibImpl>
+PibDataFixture::makePibWithKey(const Name& keyName, span<const uint8_t> key)
+{
+  auto pib = std::make_shared<PibMemory>();
+  pib->addIdentity(extractIdentityFromKeyName(keyName));
+  pib->addKey(extractIdentityFromKeyName(keyName), keyName, key);
+  return pib;
 }
 
 } // namespace tests
+} // namespace pib
 } // namespace security
 } // namespace ndn

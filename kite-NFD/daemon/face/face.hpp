@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2020,  Regents of the University of California,
+ * Copyright (c) 2014-2021,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -51,7 +51,7 @@ typedef TransportState FaceState;
  *  LinkService is the upper part, which translates between network-layer packets
  *  and TLV blocks, and may provide additional services such as fragmentation and reassembly.
  */
-class Face FINAL_UNLESS_WITH_TESTS : public std::enable_shared_from_this<Face>, noncopyable
+class Face NFD_FINAL_UNLESS_WITH_TESTS : public std::enable_shared_from_this<Face>, noncopyable
 {
 public:
   Face(unique_ptr<LinkService> service, unique_ptr<Transport> transport);
@@ -171,7 +171,16 @@ public: // properties
   getExpirationTime() const;
 
   const FaceCounters&
-  getCounters() const;
+  getCounters() const
+  {
+    return m_counters;
+  }
+
+  FaceCounters&
+  getCounters()
+  {
+    return m_counters;
+  }
 
   /**
    * \brief Get channel on which face was created (unicast) or the associated channel (multicast)
@@ -299,12 +308,6 @@ inline time::steady_clock::TimePoint
 Face::getExpirationTime() const
 {
   return m_transport->getExpirationTime();
-}
-
-inline const FaceCounters&
-Face::getCounters() const
-{
-  return m_counters;
 }
 
 std::ostream&

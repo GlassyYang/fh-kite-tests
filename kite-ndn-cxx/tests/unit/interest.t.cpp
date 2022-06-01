@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,8 +22,7 @@
 #include "ndn-cxx/interest.hpp"
 #include "ndn-cxx/data.hpp"
 
-#include "tests/boost-test.hpp"
-#include "tests/make-interest-data.hpp"
+#include "tests/test-common.hpp"
 
 namespace ndn {
 namespace tests {
@@ -53,7 +52,7 @@ BOOST_AUTO_TEST_CASE(DefaultConstructor)
   Interest i;
   BOOST_CHECK_EQUAL(i.hasWire(), false);
   BOOST_CHECK_EQUAL(i.getName(), "/");
-  BOOST_CHECK_EQUAL(i.getCanBePrefix(), true);
+  BOOST_CHECK_EQUAL(i.getCanBePrefix(), false);
   BOOST_CHECK_EQUAL(i.getMustBeFresh(), false);
   BOOST_CHECK_EQUAL(i.getForwardingHint().empty(), true);
   BOOST_CHECK_EQUAL(i.hasNonce(), false);
@@ -83,12 +82,11 @@ BOOST_AUTO_TEST_CASE(Basic)
 
   Interest i1;
   i1.setName("/local/ndn/prefix");
-  i1.setCanBePrefix(false);
   i1.setNonce(0x01020304);
   BOOST_CHECK_EQUAL(i1.isParametersDigestValid(), true);
 
   Block wire1 = i1.wireEncode();
-  BOOST_CHECK_EQUAL_COLLECTIONS(wire1.begin(), wire1.end(), WIRE, WIRE + sizeof(WIRE));
+  BOOST_TEST(wire1 == WIRE, boost::test_tools::per_element());
 
   Interest i2(wire1);
   BOOST_CHECK_EQUAL(i2.getName(), "/local/ndn/prefix");
@@ -126,13 +124,12 @@ BOOST_AUTO_TEST_CASE(WithParameters)
 
   Interest i1;
   i1.setName("/local/ndn/prefix");
-  i1.setCanBePrefix(false);
   i1.setNonce(0x1);
   i1.setApplicationParameters("2404C0C1C2C3"_block);
   BOOST_CHECK_EQUAL(i1.isParametersDigestValid(), true);
 
   Block wire1 = i1.wireEncode();
-  BOOST_CHECK_EQUAL_COLLECTIONS(wire1.begin(), wire1.end(), WIRE, WIRE + sizeof(WIRE));
+  BOOST_TEST(wire1 == WIRE, boost::test_tools::per_element());
 
   Interest i2(wire1);
   BOOST_CHECK_EQUAL(i2.getName(),
@@ -154,7 +151,7 @@ BOOST_AUTO_TEST_CASE(WithParameters)
 BOOST_AUTO_TEST_CASE(Full)
 {
   const uint8_t WIRE[] = {
-    0x05, 0x5c, // Interest
+    0x05, 0x56, // Interest
           0x07, 0x36, // Name
                 0x08, 0x05, 0x6c, 0x6f, 0x63, 0x61, 0x6c, // GenericNameComponent
                 0x08, 0x03, 0x6e, 0x64, 0x6e, // GenericNameComponent
@@ -165,12 +162,8 @@ BOOST_AUTO_TEST_CASE(Full)
                       0xcc, 0xd7, 0x2c, 0x6e, 0xa0, 0xf7, 0x31, 0x5a,
           0x21, 0x00, // CanBePrefix
           0x12, 0x00, // MustBeFresh
-          0x1e, 0x0b, // ForwardingHint
-                0x1f, 0x09, // Delegation List
-                      0x1e, 0x02,
-                            0x3e, 0x15,
-                      0x07, 0x03,
-                            0x08, 0x01, 0x48,
+          0x1e, 0x05, // ForwardingHint
+                0x07, 0x03, 0x08, 0x01, 0x48,
           0x0a, 0x04, // Nonce
                 0x4c, 0x1e, 0xcb, 0x4a,
           0x0c, 0x02, // InterestLifetime
@@ -185,7 +178,7 @@ BOOST_AUTO_TEST_CASE(Full)
   i1.setName("/local/ndn/prefix");
   i1.setMustBeFresh(true);
   i1.setCanBePrefix(true);
-  i1.setForwardingHint(DelegationList({{15893, "/H"}}));
+  i1.setForwardingHint({"/H"});
   i1.setNonce(0x4c1ecb4a);
   i1.setInterestLifetime(30369_ms);
   i1.setHopLimit(220);
@@ -193,14 +186,14 @@ BOOST_AUTO_TEST_CASE(Full)
   BOOST_CHECK_EQUAL(i1.isParametersDigestValid(), true);
 
   Block wire1 = i1.wireEncode();
-  BOOST_CHECK_EQUAL_COLLECTIONS(wire1.begin(), wire1.end(), WIRE, WIRE + sizeof(WIRE));
+  BOOST_TEST(wire1 == WIRE, boost::test_tools::per_element());
 
   Interest i2(wire1);
   BOOST_CHECK_EQUAL(i2.getName(),
                     "/local/ndn/prefix/params-sha256=ff9100e04eaadcf30674d98026a051ba25f56b69bfa026dcccd72c6ea0f7315a");
   BOOST_CHECK_EQUAL(i2.getCanBePrefix(), true);
   BOOST_CHECK_EQUAL(i2.getMustBeFresh(), true);
-  BOOST_CHECK_EQUAL(i2.getForwardingHint(), DelegationList({{15893, "/H"}}));
+  BOOST_TEST(i2.getForwardingHint() == std::vector<Name>({"/H"}), boost::test_tools::per_element());
   BOOST_CHECK_EQUAL(i2.hasNonce(), true);
   BOOST_CHECK_EQUAL(i2.getNonce(), 0x4c1ecb4a);
   BOOST_CHECK_EQUAL(i2.getInterestLifetime(), 30369_ms);
@@ -246,7 +239,7 @@ BOOST_AUTO_TEST_CASE(Signed)
   si.setNonce(nonce);
   Block sv("2E20 12471AE0F8723AC1156C370A38711EBEBF2817DE9B2DD94E9B7E62F117B876C1"_block);
 
-  Interest i1(Block(WIRE, sizeof(WIRE)));
+  Interest i1(Block{WIRE});
   BOOST_CHECK_EQUAL(i1.getName(),
                     "/local/ndn/prefix/params-sha256=6f29586053ee9fccd8a422122925287c0a18435f4074c40abb0d5b30e4aa6220");
   BOOST_CHECK_EQUAL(i1.getCanBePrefix(), false);
@@ -255,8 +248,7 @@ BOOST_AUTO_TEST_CASE(Signed)
   BOOST_CHECK_EQUAL(i1.getNonce(), 0x4c1ecb4a);
   BOOST_CHECK_EQUAL(i1.getSignatureInfo()->getSignatureType(), tlv::DigestSha256);
   BOOST_CHECK(i1.getSignatureInfo()->getNonce() == nonce);
-  BOOST_CHECK_EQUAL_COLLECTIONS(i1.getSignatureValue().begin(), i1.getSignatureValue().end(),
-                                sv.begin(), sv.end());
+  BOOST_TEST(i1.getSignatureValue() == sv, boost::test_tools::per_element());
   BOOST_CHECK_EQUAL(i1.getApplicationParameters(), "2404C0C1C2C3"_block);
   BOOST_CHECK_EQUAL(i1.isParametersDigestValid(), true);
 
@@ -266,20 +258,17 @@ BOOST_AUTO_TEST_CASE(Signed)
   i1.setCanBePrefix(false);
   BOOST_CHECK_EQUAL(i1.hasWire(), false);
 
-  Block wire1 = i1.wireEncode();
-  BOOST_CHECK_EQUAL_COLLECTIONS(wire1.begin(), wire1.end(), WIRE, WIRE + sizeof(WIRE));
+  BOOST_TEST(i1.wireEncode() == WIRE, boost::test_tools::per_element());
 
   Interest i2("/local/ndn/prefix");
-  i2.setCanBePrefix(false);
   i2.setMustBeFresh(true);
   i2.setNonce(0x4c1ecb4a);
   i2.setApplicationParameters("2404C0C1C2C3"_block);
   i2.setSignatureInfo(si);
-  i2.setSignatureValue(make_shared<Buffer>(sv.value(), sv.value_size()));
+  i2.setSignatureValue(sv.value_bytes());
   BOOST_CHECK_EQUAL(i2.isParametersDigestValid(), true);
 
-  Block wire2 = i2.wireEncode();
-  BOOST_CHECK_EQUAL_COLLECTIONS(wire2.begin(), wire2.end(), WIRE, WIRE + sizeof(WIRE));
+  BOOST_TEST(i2.wireEncode() == WIRE, boost::test_tools::per_element());
 }
 
 BOOST_AUTO_TEST_CASE(SignedApplicationElements)
@@ -324,7 +313,7 @@ BOOST_AUTO_TEST_CASE(SignedApplicationElements)
   si.setNonce(nonce);
   Block sv("2E20 12471AE0F8723AC1156C370A38711EBEBF2817DE9B2DD94E9B7E62F117B876C1"_block);
 
-  Interest i1(Block(WIRE, sizeof(WIRE)));
+  Interest i1(Block{WIRE});
   BOOST_CHECK_EQUAL(i1.getName(),
                     "/local/ndn/prefix/params-sha256=bc3630a4d65e0db5483dfa0d28b3312fcac1d441ec8961d4175e61751778108e");
   BOOST_CHECK_EQUAL(i1.getCanBePrefix(), false);
@@ -333,8 +322,7 @@ BOOST_AUTO_TEST_CASE(SignedApplicationElements)
   BOOST_CHECK_EQUAL(i1.getNonce(), 0x4c1ecb4a);
   BOOST_CHECK_EQUAL(i1.getSignatureInfo()->getSignatureType(), tlv::DigestSha256);
   BOOST_CHECK(i1.getSignatureInfo()->getNonce() == nonce);
-  BOOST_CHECK_EQUAL_COLLECTIONS(i1.getSignatureValue().begin(), i1.getSignatureValue().end(),
-                                sv.begin(), sv.end());
+  BOOST_TEST(i1.getSignatureValue() == sv, boost::test_tools::per_element());
   BOOST_CHECK_EQUAL(i1.getApplicationParameters(), "2404C0C1C2C3"_block);
   BOOST_CHECK_EQUAL(i1.isParametersDigestValid(), true);
 
@@ -344,15 +332,13 @@ BOOST_AUTO_TEST_CASE(SignedApplicationElements)
   i1.setCanBePrefix(false);
   BOOST_CHECK_EQUAL(i1.hasWire(), false);
 
-  Block wire1 = i1.wireEncode();
-  BOOST_CHECK_EQUAL_COLLECTIONS(wire1.begin(), wire1.end(), WIRE, WIRE + sizeof(WIRE));
+  BOOST_TEST(i1.wireEncode() == WIRE, boost::test_tools::per_element());
 }
 
 BOOST_AUTO_TEST_CASE(MissingApplicationParameters)
 {
   Interest i;
   i.setName(Name("/A").appendParametersSha256DigestPlaceholder());
-  i.setCanBePrefix(false);
   BOOST_CHECK_EQUAL(i.isParametersDigestValid(), false);
   BOOST_CHECK_EXCEPTION(i.wireEncode(), tlv::Error, [] (const auto& e) {
     return e.what() == "Interest without parameters must not have a ParametersSha256DigestComponent"s;
@@ -386,7 +372,7 @@ protected:
   {
     // initialize all elements to non-empty, to verify wireDecode clears them
     i.setName("/A");
-    i.setForwardingHint({{10309, "/F"}});
+    i.setForwardingHint({"/F"});
     i.setNonce(0x03d645a8);
     i.setInterestLifetime(18554_ms);
     i.setHopLimit(64);
@@ -449,7 +435,7 @@ BOOST_AUTO_TEST_CASE(FullWithoutParameters)
   BOOST_CHECK_EQUAL(i.getName(), "/I");
   BOOST_CHECK_EQUAL(i.getCanBePrefix(), true);
   BOOST_CHECK_EQUAL(i.getMustBeFresh(), true);
-  BOOST_CHECK_EQUAL(i.getForwardingHint(), DelegationList({{15893, "/H"}}));
+  BOOST_TEST(i.getForwardingHint() == std::vector<Name>({"/H"}), boost::test_tools::per_element());
   BOOST_CHECK_EQUAL(i.hasNonce(), true);
   BOOST_CHECK_EQUAL(i.getNonce(), 0x4acb1e4c);
   BOOST_CHECK_EQUAL(i.getInterestLifetime(), 30369_ms);
@@ -460,11 +446,13 @@ BOOST_AUTO_TEST_CASE(FullWithoutParameters)
   // encode without modification: retain original wire encoding
   BOOST_CHECK_EQUAL(i.wireEncode().value_size(), 49);
 
-  // modify then re-encode: unrecognized elements are discarded
+  // modify then re-encode:
+  // * unrecognized elements are discarded;
+  // * ForwardingHint is re-encoded as a sequence of Names
   i.setName("/J");
   BOOST_CHECK_EQUAL(i.wireEncode(),
-                    "0523 0703(08014A) "
-                    "2100 1200 1E0B(1F09 1E023E15 0703080148) "
+                    "051D 0703(08014A) "
+                    "2100 1200 1E05(0703080148) "
                     "0A044ACB1E4C 0C0276A1 2201D6"_block);
 }
 
@@ -477,7 +465,7 @@ BOOST_AUTO_TEST_CASE(FullWithParameters)
                     "/I/params-sha256=f16db273f40436a852063f864d5072b01ead53151f5a688ea1560492bebedd05");
   BOOST_CHECK_EQUAL(i.getCanBePrefix(), true);
   BOOST_CHECK_EQUAL(i.getMustBeFresh(), true);
-  BOOST_CHECK_EQUAL(i.getForwardingHint(), DelegationList({{15893, "/H"}}));
+  BOOST_TEST(i.getForwardingHint() == std::vector<Name>({"/H"}), boost::test_tools::per_element());
   BOOST_CHECK_EQUAL(i.hasNonce(), true);
   BOOST_CHECK_EQUAL(i.getNonce(), 0x4acb1e4c);
   BOOST_CHECK_EQUAL(i.getInterestLifetime(), 30369_ms);
@@ -488,21 +476,22 @@ BOOST_AUTO_TEST_CASE(FullWithParameters)
   // encode without modification: retain original wire encoding
   BOOST_CHECK_EQUAL(i.wireEncode().value_size(), 91);
 
-  // modify then re-encode: unrecognized elements after ApplicationParameters
-  //                        are preserved, the rest are discarded
+  // modify then re-encode:
+  // * unrecognized elements after ApplicationParameters are preserved, the rest are discarded;
+  // * ForwardingHint is re-encoded as a sequence of Names
   i.setName("/J");
   BOOST_CHECK_EQUAL(i.isParametersDigestValid(), true);
   BOOST_CHECK_EQUAL(i.wireEncode(),
-                    "054D 0725(08014A 0220F16DB273F40436A852063F864D5072B01EAD53151F5A688EA1560492BEBEDD05) "
-                    "2100 1200 1E0B(1F09 1E023E15 0703080148) "
+                    "0547 0725(08014A 0220F16DB273F40436A852063F864D5072B01EAD53151F5A688EA1560492BEBEDD05) "
+                    "2100 1200 1E05(0703080148) "
                     "0A044ACB1E4C 0C0276A1 2201D6 2404C0C1C2C3 FC00"_block);
 
   // modify ApplicationParameters: unrecognized elements are preserved
   i.setApplicationParameters("2402CAFE"_block);
   BOOST_CHECK_EQUAL(i.isParametersDigestValid(), true);
   BOOST_CHECK_EQUAL(i.wireEncode(),
-                    "054B 0725(08014A 02205FDA67967EE302FC457E41B7D3D51BA6A9379574D193FD88F64954BF16C2927A) "
-                    "2100 1200 1E0B(1F09 1E023E15 0703080148) "
+                    "0545 0725(08014A 02205FDA67967EE302FC457E41B7D3D51BA6A9379574D193FD88F64954BF16C2927A) "
+                    "2100 1200 1E05(0703080148) "
                     "0A044ACB1E4C 0C0276A1 2201D6 2402CAFE FC00"_block);
 }
 
@@ -690,7 +679,7 @@ BOOST_AUTO_TEST_CASE(MatchesInterest)
   interest.setName("/A")
           .setCanBePrefix(true)
           .setMustBeFresh(true)
-          .setForwardingHint({{1, "/H"}})
+          .setForwardingHint({"/H"})
           .setNonce(2228)
           .setInterestLifetime(5_s)
           .setHopLimit(90);
@@ -707,7 +696,8 @@ BOOST_AUTO_TEST_CASE(MatchesInterest)
   other.setMustBeFresh(interest.getMustBeFresh());
   BOOST_CHECK_EQUAL(interest.matchesInterest(other), false); // will match until #3162 implemented
 
-  other.setForwardingHint(interest.getForwardingHint());
+  auto fh = interest.getForwardingHint();
+  other.setForwardingHint(std::vector<Name>(fh.begin(), fh.end()));
   BOOST_CHECK_EQUAL(interest.matchesInterest(other), true);
 
   other.setNonce(9336);
@@ -738,11 +728,11 @@ BOOST_AUTO_TEST_CASE(SetName)
 BOOST_AUTO_TEST_CASE(SetCanBePrefix)
 {
   Interest i;
-  BOOST_CHECK_EQUAL(i.getCanBePrefix(), true);
-  i.setCanBePrefix(false);
   BOOST_CHECK_EQUAL(i.getCanBePrefix(), false);
   i.setCanBePrefix(true);
   BOOST_CHECK_EQUAL(i.getCanBePrefix(), true);
+  i.setCanBePrefix(false);
+  BOOST_CHECK_EQUAL(i.getCanBePrefix(), false);
 }
 
 BOOST_AUTO_TEST_CASE(SetMustBeFresh)
@@ -753,19 +743,6 @@ BOOST_AUTO_TEST_CASE(SetMustBeFresh)
   BOOST_CHECK_EQUAL(i.getMustBeFresh(), true);
   i.setMustBeFresh(false);
   BOOST_CHECK_EQUAL(i.getMustBeFresh(), false);
-}
-
-BOOST_AUTO_TEST_CASE(ModifyForwardingHint)
-{
-  Interest i("/I");
-  i.setCanBePrefix(false);
-  i.setForwardingHint({{1, "/A"}});
-  i.wireEncode();
-  BOOST_CHECK(i.hasWire());
-
-  i.modifyForwardingHint([] (DelegationList& fh) { fh.insert(2, "/B"); });
-  BOOST_CHECK(!i.hasWire());
-  BOOST_CHECK_EQUAL(i.getForwardingHint(), DelegationList({{1, "/A"}, {2, "/B"}}));
 }
 
 BOOST_AUTO_TEST_CASE(GetNonce)
@@ -797,7 +774,6 @@ BOOST_AUTO_TEST_CASE(GetNonce)
 BOOST_AUTO_TEST_CASE(SetNonce)
 {
   Interest i1("/A");
-  i1.setCanBePrefix(false);
   BOOST_CHECK(!i1.hasNonce());
 
   i1.setNonce(1);
@@ -834,7 +810,6 @@ BOOST_AUTO_TEST_CASE(RefreshNonce)
 BOOST_AUTO_TEST_CASE(NonceConversions)
 {
   Interest i;
-  i.setCanBePrefix(false);
 
   // 4-arg constructor
   Interest::Nonce n1(1, 2, 3, 4);
@@ -903,12 +878,17 @@ BOOST_AUTO_TEST_CASE(SetApplicationParameters)
   BOOST_CHECK_EQUAL(i.getApplicationParameters(), "24038001C1"_block);
   BOOST_CHECK_THROW(i.setApplicationParameters(Block{}), std::invalid_argument);
 
-  // raw buffer+size overload
-  i.setApplicationParameters(PARAMETERS1, sizeof(PARAMETERS1));
+  // span overload
+  i.setApplicationParameters(PARAMETERS1);
   BOOST_CHECK_EQUAL(i.getApplicationParameters(), "2401C1"_block);
-  i.setApplicationParameters(nullptr, 0);
+  i.setApplicationParameters(span<uint8_t>{});
   BOOST_CHECK_EQUAL(i.getApplicationParameters(), "2400"_block);
+
+  // raw buffer+size overload (deprecated)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
   BOOST_CHECK_THROW(i.setApplicationParameters(nullptr, 42), std::invalid_argument);
+#pragma GCC diagnostic pop
 
   // ConstBufferPtr overload
   i.setApplicationParameters(make_shared<Buffer>(PARAMETERS2, sizeof(PARAMETERS2)));
@@ -921,14 +901,15 @@ BOOST_AUTO_TEST_CASE(SetApplicationParameters)
 BOOST_AUTO_TEST_CASE(SetSignature)
 {
   Interest i;
-  i.setCanBePrefix(false);
-  BOOST_CHECK(i.getSignatureInfo() == nullopt);
-  BOOST_CHECK_EQUAL(i.isSigned(), false);
 
-  // Throws because attempting to set InterestSignatureValue without set InterestSignatureInfo
   Block sv1("2E04 01020304"_block);
-  auto svBuffer1 = make_shared<Buffer>(sv1.value(), sv1.value_size());
-  BOOST_CHECK_THROW(i.setSignatureValue(svBuffer1), tlv::Error);
+  BOOST_CHECK_EXCEPTION(i.setSignatureValue(sv1.value_bytes()), tlv::Error, [] (const auto& e) {
+    return e.what() == "InterestSignatureInfo must be present to set InterestSignatureValue"s;
+  });
+
+  BOOST_CHECK(i.getSignatureInfo() == nullopt);
+  BOOST_CHECK_EQUAL(i.getSignatureValue().isValid(), false);
+  BOOST_CHECK_EQUAL(i.isSigned(), false);
 
   // Simple set/get case for InterestSignatureInfo (no prior set)
   SignatureInfo si1(tlv::SignatureSha256WithEcdsa);
@@ -937,7 +918,7 @@ BOOST_AUTO_TEST_CASE(SetSignature)
   BOOST_CHECK_EQUAL(i.isSigned(), false);
 
   // Simple set/get case for InterestSignatureValue (no prior set)
-  BOOST_CHECK_EQUAL(i.getSignatureValue().isValid(), false);
+  auto svBuffer1 = make_shared<Buffer>(sv1.value_begin(), sv1.value_end());
   i.setSignatureValue(svBuffer1);
   BOOST_CHECK_EQUAL(i.getSignatureValue(), sv1);
   BOOST_CHECK_EQUAL(i.isSigned(), true);
@@ -969,7 +950,7 @@ BOOST_AUTO_TEST_CASE(SetSignature)
   // Ensure that wire is not reset if specified InterestSignatureValue is same
   i.wireEncode();
   BOOST_CHECK_EQUAL(i.hasWire(), true);
-  i.setSignatureValue(svBuffer1);
+  i.setSignatureValue(sv1.value_bytes());
   BOOST_CHECK_EQUAL(i.hasWire(), true);
   BOOST_CHECK(i.getSignatureInfo() == si2);
   BOOST_CHECK_EQUAL(i.getSignatureValue(), sv1);
@@ -978,12 +959,11 @@ BOOST_AUTO_TEST_CASE(SetSignature)
   // Ensure that wire is reset if specified InterestSignatureValue is different
   i.wireEncode();
   BOOST_CHECK_EQUAL(i.hasWire(), true);
-  Block sv2("2E04 99887766"_block);
-  auto svBuffer2 = make_shared<Buffer>(sv2.value(), sv2.value_size());
-  i.setSignatureValue(svBuffer2);
+  const uint8_t sv2[] = {0x99, 0x88, 0x77, 0x66};
+  i.setSignatureValue(sv2);
   BOOST_CHECK_EQUAL(i.hasWire(), false);
   BOOST_CHECK(i.getSignatureInfo() == si2);
-  BOOST_CHECK_EQUAL(i.getSignatureValue(), sv2);
+  BOOST_TEST(i.getSignatureValue().value_bytes() == sv2, boost::test_tools::per_element());
   BOOST_CHECK_EQUAL(i.isSigned(), true);
 }
 
@@ -997,7 +977,7 @@ BOOST_AUTO_TEST_CASE(ParametersSha256DigestComponent)
                     "/I/params-sha256=ff9100e04eaadcf30674d98026a051ba25f56b69bfa026dcccd72c6ea0f7315a");
   BOOST_CHECK_EQUAL(i.isParametersDigestValid(), true);
 
-  i.setApplicationParameters(nullptr, 0); // updates ParametersSha256DigestComponent
+  i.setApplicationParameters(span<uint8_t>{}); // updates ParametersSha256DigestComponent
   BOOST_CHECK_EQUAL(i.getName(),
                     "/I/params-sha256=33b67cb5385ceddad93d0ee960679041613bed34b8b4a5e6362fe7539ba2d3ce");
   BOOST_CHECK_EQUAL(i.hasApplicationParameters(), true);
@@ -1048,7 +1028,7 @@ BOOST_AUTO_TEST_CASE(ParametersSha256DigestComponent)
   BOOST_CHECK(i.getSignatureInfo() == si);
 
   Block sv("2E04 01020304"_block);
-  i.setSignatureValue(make_shared<Buffer>(sv.value(), sv.value_size())); // updates ParametersDigestSha256Component
+  i.setSignatureValue(sv.value_bytes()); // updates ParametersDigestSha256Component
   BOOST_CHECK_EQUAL(i.getName(),
                     "/A/B/C/params-sha256=f649845ef944638390d1c689e2f0618ea02e471eff236110cbeb822d5932d342");
   BOOST_CHECK_EQUAL(i.isParametersDigestValid(), true);
@@ -1068,9 +1048,7 @@ BOOST_AUTO_TEST_CASE(ParametersSha256DigestComponent)
 BOOST_AUTO_TEST_CASE(ExtractSignedRanges)
 {
   Interest i1;
-  i1.setCanBePrefix(false);
   BOOST_CHECK_EXCEPTION(i1.extractSignedRanges(), tlv::Error, [] (const auto& e) {
-    BOOST_TEST_MESSAGE(e.what());
     return e.what() == "Name has zero name components"s;
   });
   i1.setName("/test/prefix");
@@ -1084,30 +1062,29 @@ BOOST_AUTO_TEST_CASE(ExtractSignedRanges)
   const Block& wire1 = i1.wireEncode();
   // Ensure Name range captured properly
   Block nameWithoutDigest1 = i1.getName().getPrefix(-1).wireEncode();
-  BOOST_CHECK_EQUAL_COLLECTIONS(ranges1.front().first, ranges1.front().first + ranges1.front().second,
+  BOOST_CHECK_EQUAL_COLLECTIONS(ranges1.front().begin(), ranges1.front().end(),
                                 nameWithoutDigest1.value_begin(), nameWithoutDigest1.value_end());
   // Ensure parameters range captured properly
   const auto& appParamsWire1 = wire1.find(tlv::ApplicationParameters);
   BOOST_REQUIRE(appParamsWire1 != wire1.elements_end());
-  BOOST_CHECK_EQUAL_COLLECTIONS(ranges1.back().first, ranges1.back().first + ranges1.back().second,
+  BOOST_CHECK_EQUAL_COLLECTIONS(ranges1.back().begin(), ranges1.back().end(),
                                 appParamsWire1->begin(), wire1.end());
 
   // Test with Interest with existing InterestSignatureValue
-  auto sigValue = make_shared<Buffer>();
-  i1.setSignatureValue(sigValue);
+  i1.setSignatureValue(std::make_shared<Buffer>());
   auto ranges2 = i1.extractSignedRanges();
   BOOST_REQUIRE_EQUAL(ranges2.size(), 2);
   const auto& wire2 = i1.wireEncode();
   // Ensure Name range captured properly
   Block nameWithoutDigest2 = i1.getName().getPrefix(-1).wireEncode();
-  BOOST_CHECK_EQUAL_COLLECTIONS(ranges2.front().first, ranges2.front().first + ranges2.front().second,
+  BOOST_CHECK_EQUAL_COLLECTIONS(ranges2.front().begin(), ranges2.front().end(),
                                 nameWithoutDigest2.value_begin(), nameWithoutDigest2.value_end());
   // Ensure parameters range captured properly
   const auto& appParamsWire2 = wire2.find(tlv::ApplicationParameters);
   BOOST_REQUIRE(appParamsWire2 != wire2.elements_end());
   const auto& sigValueWire2 = wire2.find(tlv::InterestSignatureValue);
   BOOST_REQUIRE(sigValueWire2 != wire2.elements_end());
-  BOOST_CHECK_EQUAL_COLLECTIONS(ranges2.back().first, ranges2.back().first + ranges2.back().second,
+  BOOST_CHECK_EQUAL_COLLECTIONS(ranges2.back().begin(), ranges2.back().end(),
                                 appParamsWire2->begin(), sigValueWire2->begin());
 
   // Test with decoded Interest
@@ -1139,26 +1116,23 @@ BOOST_AUTO_TEST_CASE(ExtractSignedRanges)
                 0xbf, 0x28, 0x17, 0xde, 0x9b, 0x2d, 0xd9, 0x4e,
                 0x9b, 0x7e, 0x62, 0xf1, 0x17, 0xb8, 0x76, 0xc1,
   };
-  Block wire3(WIRE, sizeof(WIRE));
+  Block wire3(WIRE);
   Interest i2(wire3);
   auto ranges3 = i2.extractSignedRanges();
   BOOST_REQUIRE_EQUAL(ranges3.size(), 2);
   // Ensure Name range captured properly
-  BOOST_CHECK_EQUAL_COLLECTIONS(ranges3.front().first, ranges3.front().first + ranges3.front().second,
-                                &WIRE[4], &WIRE[16]);
+  BOOST_CHECK_EQUAL_COLLECTIONS(ranges3.front().begin(), ranges3.front().end(), &WIRE[4], &WIRE[16]);
   // Ensure parameters range captured properly
-  BOOST_CHECK_EQUAL_COLLECTIONS(ranges3.back().first, ranges3.back().first + ranges3.back().second,
-                                &WIRE[58], &WIRE[79]);
+  BOOST_CHECK_EQUAL_COLLECTIONS(ranges3.back().begin(), ranges3.back().end(), &WIRE[58], &WIRE[79]);
 
   // Test failure with missing ParametersSha256DigestComponent
   Interest i3("/a");
-  i3.setCanBePrefix(false);
   BOOST_CHECK_EXCEPTION(i3.extractSignedRanges(), tlv::Error, [] (const auto& e) {
     return e.what() == "Interest Name must end with a ParametersSha256DigestComponent"s;
   });
 
   // Test failure with missing InterestSignatureInfo
-  i3.setApplicationParameters(nullptr, 0);
+  i3.setApplicationParameters(span<uint8_t>{});
   BOOST_CHECK_EXCEPTION(i3.extractSignedRanges(), tlv::Error, [] (const auto& e) {
     return e.what() == "Interest missing InterestSignatureInfo"s;
   });
@@ -1167,7 +1141,6 @@ BOOST_AUTO_TEST_CASE(ExtractSignedRanges)
 BOOST_AUTO_TEST_CASE(ToUri)
 {
   Interest i;
-  i.setCanBePrefix(false);
   BOOST_CHECK_EQUAL(i.toUri(), "/");
 
   i.setName("/foo");

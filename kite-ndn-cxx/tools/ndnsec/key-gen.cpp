@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -21,8 +21,6 @@
 
 #include "ndnsec.hpp"
 #include "util.hpp"
-
-#include "ndn-cxx/util/io.hpp"
 
 namespace ndn {
 namespace ndnsec {
@@ -136,7 +134,7 @@ ndnsec_key_gen(int argc, char** argv)
     return 2;
   }
 
-  security::v2::KeyChain keyChain;
+  KeyChain keyChain;
 
   security::Identity identity;
   security::Key key;

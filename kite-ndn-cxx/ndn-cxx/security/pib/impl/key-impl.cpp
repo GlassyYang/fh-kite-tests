@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -21,57 +21,41 @@
 
 #include "ndn-cxx/security/pib/impl/key-impl.hpp"
 #include "ndn-cxx/security/pib/pib-impl.hpp"
-#include "ndn-cxx/security/pib/pib.hpp"
 #include "ndn-cxx/security/transform/public-key.hpp"
+#include "ndn-cxx/util/logger.hpp"
 
 namespace ndn {
 namespace security {
 namespace pib {
 namespace detail {
 
-KeyImpl::KeyImpl(const Name& keyName, const uint8_t* key, size_t keyLen, shared_ptr<PibImpl> pibImpl)
-  : m_identity(v2::extractIdentityFromKeyName(keyName))
+NDN_LOG_INIT(ndn.security.Key);
+
+KeyImpl::KeyImpl(const Name& keyName, Buffer key, shared_ptr<PibImpl> pibImpl)
+  : m_identity(extractIdentityFromKeyName(keyName))
   , m_keyName(keyName)
-  , m_key(key, keyLen)
+  , m_key(std::move(key))
   , m_pib(std::move(pibImpl))
-  , m_certificates(keyName, m_pib)
-  , m_isDefaultCertificateLoaded(false)
+  , m_certificates(m_keyName, m_pib)
 {
   BOOST_ASSERT(m_pib != nullptr);
+  BOOST_ASSERT(m_pib->hasKey(m_keyName));
 
   transform::PublicKey publicKey;
   try {
-    publicKey.loadPkcs8(key, keyLen);
+    publicKey.loadPkcs8(m_key);
   }
   catch (const transform::PublicKey::Error&) {
     NDN_THROW_NESTED(std::invalid_argument("Invalid key bits"));
   }
   m_keyType = publicKey.getKeyType();
-
-  m_pib->addKey(m_identity, m_keyName, key, keyLen);
-}
-
-KeyImpl::KeyImpl(const Name& keyName, shared_ptr<PibImpl> pibImpl)
-  : m_identity(v2::extractIdentityFromKeyName(keyName))
-  , m_keyName(keyName)
-  , m_pib(std::move(pibImpl))
-  , m_certificates(keyName, m_pib)
-  , m_isDefaultCertificateLoaded(false)
-{
-  BOOST_ASSERT(m_pib != nullptr);
-
-  m_key = m_pib->getKeyBits(m_keyName);
-
-  transform::PublicKey key;
-  key.loadPkcs8(m_key.data(), m_key.size());
-  m_keyType = key.getKeyType();
 }
 
 void
-KeyImpl::addCertificate(const v2::Certificate& certificate)
+KeyImpl::addCertificate(const Certificate& cert)
 {
   BOOST_ASSERT(m_certificates.isConsistent());
-  m_certificates.add(certificate);
+  m_certificates.add(cert);
 }
 
 void
@@ -79,56 +63,38 @@ KeyImpl::removeCertificate(const Name& certName)
 {
   BOOST_ASSERT(m_certificates.isConsistent());
 
-  if (m_isDefaultCertificateLoaded && m_defaultCertificate.getName() == certName)
-    m_isDefaultCertificateLoaded = false;
-
+  if (m_defaultCert && m_defaultCert->getName() == certName) {
+    NDN_LOG_DEBUG("Removing default certificate " << certName);
+    m_defaultCert = nullopt;
+  }
   m_certificates.remove(certName);
 }
 
-v2::Certificate
-KeyImpl::getCertificate(const Name& certName) const
-{
-  BOOST_ASSERT(m_certificates.isConsistent());
-  return m_certificates.get(certName);
-}
-
-const CertificateContainer&
-KeyImpl::getCertificates() const
-{
-  BOOST_ASSERT(m_certificates.isConsistent());
-  return m_certificates;
-}
-
-const v2::Certificate&
-KeyImpl::setDefaultCertificate(const Name& certName)
+const Certificate&
+KeyImpl::setDefaultCert(Certificate cert)
 {
   BOOST_ASSERT(m_certificates.isConsistent());
 
-  m_defaultCertificate = m_certificates.get(certName);
-  m_pib->setDefaultCertificateOfKey(m_keyName, certName);
-  m_isDefaultCertificateLoaded = true;
-  return m_defaultCertificate;
+  m_defaultCert = std::move(cert);
+  m_pib->setDefaultCertificateOfKey(m_keyName, m_defaultCert->getName());
+  NDN_LOG_DEBUG("Default certificate set to " << m_defaultCert->getName());
+
+  return *m_defaultCert;
 }
 
-const v2::Certificate&
-KeyImpl::setDefaultCertificate(const v2::Certificate& certificate)
-{
-  addCertificate(certificate);
-  return setDefaultCertificate(certificate.getName());
-}
-
-const v2::Certificate&
+const Certificate&
 KeyImpl::getDefaultCertificate() const
 {
   BOOST_ASSERT(m_certificates.isConsistent());
 
-  if (!m_isDefaultCertificateLoaded) {
-    m_defaultCertificate = m_pib->getDefaultCertificateOfKey(m_keyName);
-    m_isDefaultCertificateLoaded = true;
+  if (!m_defaultCert) {
+    m_defaultCert = m_pib->getDefaultCertificateOfKey(m_keyName);
+    NDN_LOG_DEBUG("Caching default certificate " << m_defaultCert->getName());
   }
-  BOOST_ASSERT(m_pib->getDefaultCertificateOfKey(m_keyName).wireEncode() == m_defaultCertificate.wireEncode());
 
-  return m_defaultCertificate;
+  BOOST_ASSERT(m_defaultCert);
+  BOOST_ASSERT(m_defaultCert->getName() == m_pib->getDefaultCertificateOfKey(m_keyName).getName());
+  return *m_defaultCert;
 }
 
 } // namespace detail

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -23,6 +23,10 @@
 #include "ndn-cxx/util/logger.hpp"
 #include "ndn-cxx/util/time.hpp"
 
+#ifdef __ANDROID__
+#include "ndn-cxx/util/impl/logger-android.hpp"
+#endif
+
 #include <boost/log/attributes/function.hpp>
 #include <boost/log/expressions.hpp>
 #include <boost/log/expressions/attr.hpp>
@@ -33,15 +37,10 @@
 #include <boost/range/iterator_range.hpp>
 
 #include <cinttypes> // for PRIdLEAST64
+#include <cstdio>    // for std::snprintf()
 #include <cstdlib>   // for std::abs()
 #include <iostream>
 #include <sstream>
-#include <stdio.h>   // for snprintf()
-
-// suppress warning caused by <boost/log/sinks/text_ostream_backend.hpp>
-#ifdef __clang__
-#pragma clang diagnostic ignored "-Wundefined-func-template"
-#endif
 
 namespace ndn {
 namespace util {
@@ -64,9 +63,8 @@ makeTimestamp()
 
   static_assert(std::is_same<microseconds::rep, int_least64_t>::value,
                 "PRIdLEAST64 is incompatible with microseconds::rep");
-  // std::snprintf unavailable on some platforms, see #2299
-  ::snprintf(&buffer.front(), buffer.size(), "%" PRIdLEAST64 ".%06" PRIdLEAST64,
-             usecs / usecsPerSec, usecs % usecsPerSec);
+  std::snprintf(&buffer.front(), buffer.size(), "%" PRIdLEAST64 ".%06" PRIdLEAST64,
+                usecs / usecsPerSec, usecs % usecsPerSec);
 
   // need to remove extra 1 byte ('\0')
   buffer.pop_back();
@@ -90,22 +88,24 @@ Logging::get()
 
 Logging::Logging()
 {
-  bool wantAutoFlush = true;
-  const char* environ = std::getenv("NDN_LOG_NOFLUSH");
-  if (environ != nullptr) {
-    wantAutoFlush = false;
-  }
+#ifndef __ANDROID__
+  bool wantAutoFlush = std::getenv("NDN_LOG_NOFLUSH") == nullptr;
+  auto destination = makeDefaultStreamDestination(shared_ptr<std::ostream>(&std::clog, [] (auto&&) {}),
+                                                  wantAutoFlush);
+#else
+  auto destination = detail::makeAndroidLogger();
+#endif // __ANDROID__
 
-  // cannot call the static setDestination that uses the singleton Logging object that is not yet constructed
-  auto destination = makeDefaultStreamDestination(shared_ptr<std::ostream>(&std::clog, [] (auto) {}), wantAutoFlush);
+  // cannot call the static setDestination(), as the singleton object is not yet constructed
   this->setDestinationImpl(std::move(destination));
 
-  environ = std::getenv("NDN_LOG");
-  if (environ != nullptr) {
-    this->setLevelImpl(environ);
+  const char* env = std::getenv("NDN_LOG");
+  if (env != nullptr) {
+    this->setLevelImpl(env);
   }
 
-  boost::log::core::get()->add_global_attribute("Timestamp", boost::log::attributes::make_function(&log::makeTimestamp));
+  boost::log::core::get()->add_global_attribute("Timestamp",
+                                                boost::log::attributes::make_function(&log::makeTimestamp));
 }
 
 void
@@ -250,7 +250,8 @@ Logging::resetLevels()
 void
 Logging::setDestination(std::ostream& os, bool wantAutoFlush)
 {
-  auto destination = makeDefaultStreamDestination(shared_ptr<std::ostream>(&os, [] (auto) {}), wantAutoFlush);
+  auto destination = makeDefaultStreamDestination(shared_ptr<std::ostream>(&os, [] (auto&&) {}),
+                                                  wantAutoFlush);
   setDestination(std::move(destination));
 }
 
@@ -261,7 +262,7 @@ public:
     : m_stdPtr(std::move(os))
   {
     auto_flush(wantAutoFlush);
-    add_stream(boost::shared_ptr<std::ostream>(m_stdPtr.get(), [] (auto) {}));
+    add_stream(boost::shared_ptr<std::ostream>(m_stdPtr.get(), [] (auto&&) {}));
   }
 
 private:

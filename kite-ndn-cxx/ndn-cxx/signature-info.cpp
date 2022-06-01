@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -75,7 +75,7 @@ SignatureInfo::wireEncode(EncodingImpl<TAG>& encoder, SignatureInfo::Type type) 
   // m_otherTlvs contains (if set) SignatureNonce, SignatureTime, SignatureSeqNum, ValidityPeriod,
   // and AdditionalDescription, as well as any custom elements added by the user
   for (const auto& block : m_otherTlvs | boost::adaptors::reversed) {
-    totalLength += encoder.prependBlock(block);
+    totalLength += prependBlock(encoder, block);
   }
 
   if (m_keyLocator) {
@@ -92,10 +92,10 @@ SignatureInfo::wireEncode(EncodingImpl<TAG>& encoder, SignatureInfo::Type type) 
 }
 
 template size_t
-SignatureInfo::wireEncode<encoding::EncoderTag>(encoding::EncodingBuffer&, SignatureInfo::Type) const;
+SignatureInfo::wireEncode<encoding::EncoderTag>(EncodingBuffer&, SignatureInfo::Type) const;
 
 template size_t
-SignatureInfo::wireEncode<encoding::EstimatorTag>(encoding::EncodingEstimator&, SignatureInfo::Type) const;
+SignatureInfo::wireEncode<encoding::EstimatorTag>(EncodingEstimator&, SignatureInfo::Type) const;
 
 const Block&
 SignatureInfo::wireEncode(SignatureInfo::Type type) const
@@ -205,12 +205,6 @@ SignatureInfo::setKeyLocator(optional<KeyLocator> keyLocator)
   return *this;
 }
 
-void
-SignatureInfo::unsetKeyLocator()
-{
-  setKeyLocator(nullopt);
-}
-
 security::ValidityPeriod
 SignatureInfo::getValidityPeriod() const
 {
@@ -233,12 +227,6 @@ SignatureInfo::setValidityPeriod(optional<security::ValidityPeriod> validityPeri
   return *this;
 }
 
-void
-SignatureInfo::unsetValidityPeriod()
-{
-  setValidityPeriod(nullopt);
-}
-
 optional<std::vector<uint8_t>>
 SignatureInfo::getNonce() const
 {
@@ -250,13 +238,13 @@ SignatureInfo::getNonce() const
 }
 
 SignatureInfo&
-SignatureInfo::setNonce(optional<std::vector<uint8_t>> nonce)
+SignatureInfo::setNonce(optional<span<const uint8_t>> nonce)
 {
   if (!nonce) {
     removeCustomTlv(tlv::SignatureNonce);
   }
   else {
-    addCustomTlv(makeBinaryBlock(tlv::SignatureNonce, nonce->data(), nonce->size()));
+    addCustomTlv(makeBinaryBlock(tlv::SignatureNonce, *nonce));
   }
   return *this;
 }
@@ -278,7 +266,8 @@ SignatureInfo::setTime(optional<time::system_clock::time_point> time)
     removeCustomTlv(tlv::SignatureTime);
   }
   else {
-    addCustomTlv(makeNonNegativeIntegerBlock(tlv::SignatureTime, time::toUnixTimestamp(*time).count()));
+    addCustomTlv(makeNonNegativeIntegerBlock(tlv::SignatureTime,
+                                             static_cast<uint64_t>(time::toUnixTimestamp(*time).count())));
   }
   return *this;
 }
@@ -344,22 +333,6 @@ SignatureInfo::removeCustomTlv(uint32_t type)
   }
 }
 
-const Block&
-SignatureInfo::getTypeSpecificTlv(uint32_t type) const
-{
-  auto it = findOtherTlv(type);
-  if (it == m_otherTlvs.end()) {
-    NDN_THROW(Error("TLV-TYPE " + to_string(type) + " sub-element does not exist in SignatureInfo"));
-  }
-  return *it;
-}
-
-void
-SignatureInfo::appendTypeSpecificTlv(const Block& block)
-{
-  addCustomTlv(block);
-}
-
 std::vector<Block>::const_iterator
 SignatureInfo::findOtherTlv(uint32_t type) const
 {
@@ -394,7 +367,7 @@ operator<<(std::ostream& os, const SignatureInfo& info)
         case tlv::SignatureNonce: {
           os << "Nonce=";
           auto nonce = *info.getNonce();
-          printHex(os, nonce.data(), nonce.size(), false);
+          printHex(os, nonce, false);
           os << " ";
           break;
         }

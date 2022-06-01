@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,13 +20,12 @@
  */
 
 #include "ndn-cxx/security/validation-policy-signed-interest.hpp"
+
 #include "ndn-cxx/security/interest-signer.hpp"
-#include "ndn-cxx/security/signing-helpers.hpp"
 #include "ndn-cxx/security/validation-policy-accept-all.hpp"
 #include "ndn-cxx/security/validation-policy-simple-hierarchy.hpp"
 
-#include "tests/boost-test.hpp"
-#include "tests/make-interest-data.hpp"
+#include "tests/test-common.hpp"
 #include "tests/unit/security/validator-fixture.hpp"
 
 #include <boost/lexical_cast.hpp>
@@ -76,7 +75,6 @@ public:
                      uint32_t signingFlags = InterestSigner::WantNonce | InterestSigner::WantTime)
   {
     Interest i(Name(identity.getName()).append("CMD"));
-    i.setCanBePrefix(false);
     m_signer.makeSignedInterest(i, signingByIdentity(identity), signingFlags);
     return i;
   }
@@ -103,7 +101,6 @@ BOOST_AUTO_TEST_CASE(BasicV3)
   VALIDATE_SUCCESS(i2, "Should succeed (timestamp and sequence number larger than previous)");
 
   Interest i3(Name(identity.getName()).append("CMD"));
-  i3.setCanBePrefix(false);
   m_signer.makeSignedInterest(i3, signingWithSha256());
   VALIDATE_FAILURE(i3, "Should fail (Sha256 signature violates policy)");
 }
@@ -188,7 +185,7 @@ public:
 BOOST_FIXTURE_TEST_CASE(UnlimitedRecords, ValidationPolicySignedInterestFixture<UnlimitedRecordsOptions>)
 {
   std::vector<Identity> identities;
-  for (int i = 0; i < 20; ++i) {
+  for (size_t i = 0; i < 20; ++i) {
     Identity id = addSubCertificate("/Security/ValidatorFixture/Sub" + to_string(i), identity);
     cache.insert(id.getDefaultKey().getDefaultCertificate());
     identities.push_back(id);
@@ -196,7 +193,7 @@ BOOST_FIXTURE_TEST_CASE(UnlimitedRecords, ValidationPolicySignedInterestFixture<
 
   auto i1 = makeSignedInterest(identities.at(0)); // signed at 0s
   advanceClocks(1_s);
-  for (int i = 0; i < 20; ++i) {
+  for (size_t i = 0; i < 20; ++i) {
     auto i2 = makeSignedInterest(identities.at(i)); // signed at +1s
 
     VALIDATE_SUCCESS(i2, "Should succeed");
@@ -295,7 +292,7 @@ BOOST_FIXTURE_TEST_CASE(TimestampTooNew, ValidationPolicySignedInterestFixture<G
   advanceClocks(1_s);
   auto i3 = makeSignedInterest(identity); // signed at +2s
 
-  systemClock->advance(-18_s); // verifying at -16s
+  m_systemClock->advance(-18_s); // verifying at -16s
   VALIDATE_FAILURE(i1, "Should fail (timestamp outside the grace period)");
   rewindClockAfterValidation();
 
@@ -334,11 +331,11 @@ BOOST_AUTO_TEST_CASE(TimestampReorderNegative)
   advanceClocks(300_ms);
   auto i4 = makeSignedInterest(identity); // signed at +1400ms
 
-  systemClock->advance(-300_ms); // verifying at +1100ms
+  m_systemClock->advance(-300_ms); // verifying at +1100ms
   VALIDATE_SUCCESS(i1, "Should succeed");
   rewindClockAfterValidation();
 
-  systemClock->advance(-1100_ms); // verifying at 0ms
+  m_systemClock->advance(-1100_ms); // verifying at 0ms
   VALIDATE_FAILURE(i2, "Should fail (timestamp reordered)");
   rewindClockAfterValidation();
 

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,7 +22,6 @@
 #ifndef NDN_CXX_INTEREST_HPP
 #define NDN_CXX_INTEREST_HPP
 
-#include "ndn-cxx/delegation-list.hpp"
 #include "ndn-cxx/detail/packet-base.hpp"
 #include "ndn-cxx/name.hpp"
 #include "ndn-cxx/security/security-common.hpp"
@@ -33,7 +32,6 @@
 #include <array>
 
 #include <boost/endian/conversion.hpp>
-#include <boost/logic/tribool.hpp>
 
 namespace ndn {
 
@@ -97,7 +95,7 @@ public:
     friend std::ostream&
     operator<<(std::ostream& os, const Nonce& nonce)
     {
-      printHex(os, nonce.data(), nonce.size(), false);
+      printHex(os, nonce, false);
       return os;
     }
   };
@@ -109,7 +107,7 @@ public:
    *           using `make_shared`. Otherwise, `shared_from_this()` will trigger undefined behavior.
    */
   explicit
-  Interest(const Name& name = Name(), time::milliseconds lifetime = DEFAULT_INTEREST_LIFETIME);
+  Interest(const Name& name = {}, time::milliseconds lifetime = DEFAULT_INTEREST_LIFETIME);
 
   /** @brief Construct an Interest by decoding from @p wire.
    *
@@ -182,26 +180,6 @@ public: // element access
   Interest&
   setName(const Name& name);
 
-  /** @brief Declare the default CanBePrefix setting of the application.
-   *
-   *  As part of transitioning to NDN Packet Format v0.3, the default setting for CanBePrefix
-   *  will be changed from "true" to "false". Application developers are advised to review all
-   *  Interests expressed by their application and decide what CanBePrefix setting is appropriate
-   *  for each Interest, to avoid breaking changes when the transition occurs. Application may
-   *  either set CanBePrefix on a per-Interest basis, or declare a default CanBePrefix setting for
-   *  all Interests expressed by the application using this function. If an application neither
-   *  declares a default nor sets CanBePrefix on every Interest, Interest::wireEncode will print a
-   *  one-time warning message.
-   *
-   *  @note This function should not be used in libraries or in ndn-cxx unit tests.
-   *  @sa https://redmine.named-data.net/projects/nfd/wiki/Packet03Transition
-   */
-  static void
-  setDefaultCanBePrefix(bool canBePrefix)
-  {
-    s_defaultCanBePrefix = canBePrefix;
-  }
-
   /** @brief Check whether the CanBePrefix element is present.
    */
   bool
@@ -218,7 +196,6 @@ public: // element access
   {
     m_canBePrefix = canBePrefix;
     m_wire.reset();
-    m_isCanBePrefixSet = true;
     return *this;
   }
 
@@ -241,33 +218,14 @@ public: // element access
     return *this;
   }
 
-  const DelegationList&
+  span<const Name>
   getForwardingHint() const noexcept
   {
     return m_forwardingHint;
   }
 
   Interest&
-  setForwardingHint(const DelegationList& value);
-
-  /** @brief Modify ForwardingHint in-place.
-   *  @tparam Modifier a unary function that accepts DelegationList&
-   *
-   *  This is equivalent to, but more efficient (avoids copying) than:
-   *  @code
-   *  auto fh = interest.getForwardingHint();
-   *  modifier(fh);
-   *  interest.setForwardingHint(fh);
-   *  @endcode
-   */
-  template<typename Modifier>
-  Interest&
-  modifyForwardingHint(const Modifier& modifier)
-  {
-    modifier(m_forwardingHint);
-    m_wire.reset();
-    return *this;
-  }
+  setForwardingHint(std::vector<Name> value);
 
   /** @brief Check if the Nonce element is present.
    */
@@ -366,16 +324,30 @@ public: // element access
   setApplicationParameters(const Block& block);
 
   /**
-   * @brief Set ApplicationParameters by copying from a raw buffer.
-   * @param value points to a buffer from which the TLV-VALUE of the parameters will be copied;
-   *              may be nullptr if @p length is zero
-   * @param length size of the buffer
+   * @brief Set ApplicationParameters by copying from a contiguous sequence of bytes.
+   * @param value buffer from which the TLV-VALUE of the parameters will be copied
    * @return a reference to this Interest
    *
    * This function will also recompute the value of the ParametersSha256DigestComponent in the
    * Interest's name. If the name does not contain a ParametersSha256DigestComponent, one will
    * be appended to it.
    */
+  Interest&
+  setApplicationParameters(span<const uint8_t> value);
+
+  /**
+   * @brief Set ApplicationParameters by copying from a raw buffer.
+   * @param value points to a buffer from which the TLV-VALUE of the parameters will be copied;
+   *              may be nullptr if @p length is zero
+   * @param length size of the buffer
+   * @return a reference to this Interest
+   * @deprecated Use setApplicationParameters(span<const uint8_t>)
+   *
+   * This function will also recompute the value of the ParametersSha256DigestComponent in the
+   * Interest's name. If the name does not contain a ParametersSha256DigestComponent, one will
+   * be appended to it.
+   */
+  [[deprecated("use the overload that takes a span<>")]]
   Interest&
   setApplicationParameters(const uint8_t* value, size_t length);
 
@@ -420,18 +392,32 @@ public: // element access
   Interest&
   setSignatureInfo(const SignatureInfo& info);
 
-  /** @brief Get the InterestSignatureValue
+  /**
+   * @brief Get the InterestSignatureValue element.
    *
-   *  If the element is not present, an invalid Block will be returned.
+   * If the element is not present, an invalid Block will be returned.
    */
   Block
   getSignatureValue() const;
 
-  /** @brief Set the InterestSignatureValue
-   *  @param value Buffer containing the TLV-VALUE of the InterestSignatureValue; must not be nullptr
-   *  @throw Error InterestSignatureInfo is unset
+  /**
+   * @brief Set InterestSignatureValue by copying from a contiguous sequence of bytes.
+   * @param value buffer from which the TLV-VALUE of the InterestSignatureValue will be copied
+   * @return a reference to this Interest
+   * @throw Error InterestSignatureInfo is unset
    *
-   *  InterestSignatureInfo must be set before setting InterestSignatureValue
+   * InterestSignatureInfo must be set before setting InterestSignatureValue.
+   */
+  Interest&
+  setSignatureValue(span<const uint8_t> value);
+
+  /**
+   * @brief Set InterestSignatureValue from a shared buffer.
+   * @param value buffer containing the TLV-VALUE of the InterestSignatureValue; must not be nullptr
+   * @return a reference to this Interest
+   * @throw Error InterestSignatureInfo is unset
+   *
+   * InterestSignatureInfo must be set before setting InterestSignatureValue.
    */
   Interest&
   setSignatureValue(ConstBufferPtr value);
@@ -467,8 +453,11 @@ public: // ParametersSha256DigestComponent support
   isParametersDigestValid() const;
 
 private:
-  void
+  Interest&
   setApplicationParametersInternal(Block parameters);
+
+  Interest&
+  setSignatureValueInternal(Block sigValue);
 
   NDN_CXX_NODISCARD shared_ptr<Buffer>
   computeParametersDigest() const;
@@ -495,23 +484,15 @@ private:
   std::vector<Block>::const_iterator
   findFirstParameter(uint32_t type) const;
 
-#ifdef NDN_CXX_HAVE_TESTS
-public:
-  /// If true, not setting CanBePrefix results in an error in wireEncode().
-  static bool s_errorIfCanBePrefixUnset;
-#endif // NDN_CXX_HAVE_TESTS
-
 private:
-  static boost::logic::tribool s_defaultCanBePrefix;
   static bool s_autoCheckParametersDigest;
 
   Name m_name;
-  DelegationList m_forwardingHint;
+  std::vector<Name> m_forwardingHint;
   mutable optional<Nonce> m_nonce;
-  time::milliseconds m_interestLifetime;
+  time::milliseconds m_interestLifetime = DEFAULT_INTEREST_LIFETIME;
   optional<uint8_t> m_hopLimit;
-  mutable bool m_isCanBePrefixSet = false;
-  bool m_canBePrefix = true;
+  bool m_canBePrefix = false;
   bool m_mustBeFresh = false;
 
   // Stores the "Interest parameters", i.e., all maybe-unrecognized non-critical TLV

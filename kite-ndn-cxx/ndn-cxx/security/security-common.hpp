@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,10 +19,11 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_SECURITY_COMMON_HPP
-#define NDN_SECURITY_SECURITY_COMMON_HPP
+#ifndef NDN_CXX_SECURITY_SECURITY_COMMON_HPP
+#define NDN_CXX_SECURITY_SECURITY_COMMON_HPP
 
 #include "ndn-cxx/detail/common.hpp"
+#include "ndn-cxx/util/span.hpp"
 
 #include <vector>
 
@@ -55,9 +56,9 @@ const size_t MIN_SIZE = 4;
 } // namespace command_interest
 
 #ifndef DOXYGEN
-using InputBuffers = std::vector<std::pair<const uint8_t*, size_t>>;
+using InputBuffers = std::vector<span<const uint8_t>>;
 #else
-/// Represents a range of distcontiguous buffers as input to a security operation
+/// Represents a collection of discontiguous memory buffers as input to a security operation
 class InputBuffers;
 #endif
 
@@ -137,4 +138,4 @@ operator<<(std::ostream& os, CipherOperator op);
 
 } // namespace ndn
 
-#endif // NDN_SECURITY_SECURITY_COMMON_HPP
+#endif // NDN_CXX_SECURITY_SECURITY_COMMON_HPP

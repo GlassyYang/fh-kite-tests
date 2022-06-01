@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -49,7 +49,7 @@ protected:
          bool isUnsolicited = false)
   {
     auto data = makeData(name);
-    data->setContent(reinterpret_cast<const uint8_t*>(&id), sizeof(id));
+    data->setContent(ndn::make_span(reinterpret_cast<const uint8_t*>(&id), sizeof(id)));
 
     if (modifyData != nullptr) {
       modifyData(*data);
@@ -64,8 +64,7 @@ protected:
   Interest&
   startInterest(const Name& name)
   {
-    interest = make_shared<Interest>(name);
-    interest->setCanBePrefix(false);
+    interest = makeInterest(name);
     return *interest;
   }
 
@@ -74,17 +73,17 @@ protected:
   {
     bool hasResult = false;
     cs.find(*interest,
-            [&] (const Interest& interest, const Data& data) {
+            [&] (const Interest&, const Data& data) {
               hasResult = true;
               const Block& content = data.getContent();
               uint32_t found = 0;
               std::memcpy(&found, content.value(), sizeof(found));
               check(found);
             },
-            bind([&] {
+            [&] (auto&&...) {
               hasResult = true;
               check(0);
-            }));
+            });
 
     // current Cs::find implementation is synchronous
     BOOST_CHECK(hasResult);

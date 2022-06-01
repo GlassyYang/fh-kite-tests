@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -38,6 +38,13 @@ static const size_t NOT_BEFORE_OFFSET = 0;
 static const size_t NOT_AFTER_OFFSET = 1;
 
 using boost::chrono::time_point_cast;
+
+ValidityPeriod
+ValidityPeriod::makeRelative(time::seconds validFrom, time::seconds validUntil,
+                             const time::system_clock::TimePoint& now)
+{
+  return ValidityPeriod(now + validFrom, now + validUntil);
+}
 
 ValidityPeriod::ValidityPeriod()
   : ValidityPeriod(time::system_clock::TimePoint() + 1_ns,
@@ -140,7 +147,7 @@ ValidityPeriod::setPeriod(const time::system_clock::TimePoint& notBefore,
 std::pair<time::system_clock::TimePoint, time::system_clock::TimePoint>
 ValidityPeriod::getPeriod() const
 {
-  return std::make_pair(m_notBefore, m_notAfter);
+  return {m_notBefore, m_notAfter};
 }
 
 bool

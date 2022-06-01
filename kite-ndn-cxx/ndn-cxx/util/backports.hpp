@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_UTIL_BACKPORTS_HPP
-#define NDN_UTIL_BACKPORTS_HPP
+#ifndef NDN_CXX_UTIL_BACKPORTS_HPP
+#define NDN_CXX_UTIL_BACKPORTS_HPP
 
 #include "ndn-cxx/detail/common.hpp"
 
@@ -41,7 +41,7 @@
 #endif
 
 //
-// http://wg21.link/P0188
+// https://wg21.link/P0188
 // [[fallthrough]] attribute (C++17)
 //
 #if (__cplusplus > 201402L) && NDN_CXX_HAS_CPP_ATTRIBUTE(fallthrough)
@@ -57,7 +57,7 @@
 #endif
 
 //
-// http://wg21.link/P0189
+// https://wg21.link/P0189
 // [[nodiscard]] attribute (C++17)
 //
 #if (__cplusplus > 201402L) && NDN_CXX_HAS_CPP_ATTRIBUTE(nodiscard)
@@ -67,21 +67,6 @@
 #else
 #  define NDN_CXX_NODISCARD
 #endif
-
-#ifndef NDEBUG
-#  define NDN_CXX_UNREACHABLE BOOST_ASSERT(false)
-#elif BOOST_COMP_GNUC || BOOST_COMP_CLANG
-#  define NDN_CXX_UNREACHABLE __builtin_unreachable()
-#elif BOOST_COMP_MSVC
-#  define NDN_CXX_UNREACHABLE __assume(0)
-#else
-#  include <cstdlib>
-#  define NDN_CXX_UNREACHABLE std::abort()
-#endif
-
-#include "ndn-cxx/util/nonstd/any.hpp"
-#include "ndn-cxx/util/nonstd/optional.hpp"
-#include "ndn-cxx/util/nonstd/variant.hpp"
 
 #ifndef NDN_CXX_HAVE_STD_TO_STRING
 #include <boost/lexical_cast.hpp>
@@ -97,7 +82,7 @@ namespace ndn {
 using std::to_string;
 #else
 template<typename T>
-inline std::string
+std::string
 to_string(const T& val)
 {
   return boost::lexical_cast<std::string>(val);
@@ -130,42 +115,44 @@ clamp(const T& v, const T& lo, const T& hi)
 
 //
 // https://wg21.link/P1682
-// std::to_underlying() (approved for LWG as of July 2019)
+// std::to_underlying() (C++23)
 //
-#if __cpp_lib_to_underlying >= 202002L
+#if __cpp_lib_to_underlying >= 202102L
 using std::to_underlying;
 #else
 template<typename T>
-constexpr std::underlying_type_t<T>
+NDN_CXX_NODISCARD constexpr std::underlying_type_t<T>
 to_underlying(T val) noexcept
 {
+  // instantiating underlying_type with a non-enum type is UB before C++20
   static_assert(std::is_enum<T>::value, "");
   return static_cast<std::underlying_type_t<T>>(val);
 }
 #endif // __cpp_lib_to_underlying
 
-using ::nonstd::any;
-using ::nonstd::any_cast;
-using ::nonstd::bad_any_cast;
-using ::nonstd::make_any;
-
-using ::nonstd::optional;
-using ::nonstd::bad_optional_access;
-using ::nonstd::nullopt;
-using ::nonstd::nullopt_t;
-using ::nonstd::in_place;
-using ::nonstd::in_place_t;
-using ::nonstd::make_optional;
-
-using ::nonstd::variant;
-using ::nonstd::bad_variant_access;
-using ::nonstd::monostate;
-using ::nonstd::variant_npos;
-using ::nonstd::get;
-using ::nonstd::get_if;
-using ::nonstd::holds_alternative;
-using ::nonstd::visit;
+//
+// https://wg21.link/P0627
+// std::unreachable() (C++23)
+//
+#ifndef NDEBUG
+#  define NDN_CXX_UNREACHABLE BOOST_ASSERT(false)
+#elif __cpp_lib_unreachable >= 202202L
+#  define NDN_CXX_UNREACHABLE std::unreachable()
+#else
+#  define NDN_CXX_UNREACHABLE ::ndn::detail::unreachable()
+namespace detail {
+[[noreturn]] inline void
+unreachable()
+{
+#if BOOST_COMP_GNUC || BOOST_COMP_CLANG
+  __builtin_unreachable();
+#elif BOOST_COMP_MSVC
+  __assume(0);
+#endif
+} // unreachable()
+} // namespace detail
+#endif
 
 } // namespace ndn
 
-#endif // NDN_UTIL_BACKPORTS_HPP
+#endif // NDN_CXX_UTIL_BACKPORTS_HPP

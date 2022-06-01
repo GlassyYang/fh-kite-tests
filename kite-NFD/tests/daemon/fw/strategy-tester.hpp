@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2020,  Regents of the University of California,
+ * Copyright (c) 2014-2021,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -53,11 +53,7 @@ template<typename S>
 class StrategyTester : public S
 {
 public:
-  explicit
-  StrategyTester(Forwarder& forwarder, const Name& name = getStrategyName())
-    : S(forwarder, name)
-  {
-  }
+  using S::S;
 
   static Name
   getStrategyName()
@@ -76,7 +72,7 @@ public:
     return name;
   }
 
-  /** \brief signal emitted after each Action
+  /** \brief Signal emitted after each action
    */
   signal::Signal<StrategyTester<S>> afterAction;
 
@@ -95,12 +91,11 @@ public:
       ++nActions;
     });
 
-    f();
+    std::forward<F>(f)();
 
     if (nActions < nExpectedActions) {
-      // A correctly implemented strategy is required to invoke reject pending Interest action if it
-      // decides to not forward an Interest. If a test case is stuck in the call below, check that
-      // rejectPendingInterest is invoked under proper condition.
+      // If strategy doesn't forward anything (e.g., decides not to forward an Interest), the number
+      // of expected actions should be 0; otherwise the test will get stuck.
       return limitedIo.run(nExpectedActions - nActions, LimitedIo::UNLIMITED_TIME) == LimitedIo::EXCEED_OPS;
     }
     return nActions == nExpectedActions;
@@ -108,8 +103,8 @@ public:
 
 protected:
   pit::OutRecord*
-  sendInterest(const shared_ptr<pit::Entry>& pitEntry, Face& egress,
-               const Interest& interest) override
+  sendInterest(const Interest& interest, Face& egress,
+               const shared_ptr<pit::Entry>& pitEntry) override
   {
     sendInterestHistory.push_back({pitEntry->getInterest(), egress.getId(), interest});
     auto it = pitEntry->insertOrUpdateOutRecord(egress, interest);
@@ -126,8 +121,8 @@ protected:
   }
 
   bool
-  sendNack(const shared_ptr<pit::Entry>& pitEntry, Face& egress,
-           const lp::NackHeader& header) override
+  sendNack(const lp::NackHeader& header, Face& egress,
+           const shared_ptr<pit::Entry>& pitEntry) override
   {
     sendNackHistory.push_back({pitEntry->getInterest(), egress.getId(), header});
     pitEntry->deleteInRecord(egress);

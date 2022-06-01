@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2018 Regents of the University of California,
+ * Copyright (c) 2014-2021 Regents of the University of California,
  *                         Arizona Board of Regents,
  *                         Colorado State University,
  *                         University Pierre & Marie Curie, Sorbonne University,
@@ -29,7 +29,7 @@
 #include "ndn-cxx/util/dummy-client-face.hpp"
 
 #include "tests/boost-test.hpp"
-#include "tests/unit/identity-management-time-fixture.hpp"
+#include "tests/unit/io-key-chain-fixture.hpp"
 #include "tests/unit/util/simple-notification.hpp"
 
 namespace ndn {
@@ -37,13 +37,14 @@ namespace util {
 namespace tests {
 
 BOOST_AUTO_TEST_SUITE(Util)
-BOOST_FIXTURE_TEST_SUITE(TestNotificationStream, ndn::tests::IdentityManagementTimeFixture)
+BOOST_FIXTURE_TEST_SUITE(TestNotificationStream, ndn::tests::IoKeyChainFixture)
 
 BOOST_AUTO_TEST_CASE(Post)
 {
-  DummyClientFace face(io, m_keyChain);
-  util::NotificationStream<SimpleNotification> notificationStream(face,
-    "/localhost/nfd/NotificationStreamTest", m_keyChain);
+  DummyClientFace face(m_io, m_keyChain);
+  NotificationStream<SimpleNotification> notificationStream(face,
+                                                            "/localhost/nfd/NotificationStreamTest",
+                                                            m_keyChain);
 
   SimpleNotification event1("msg1");
   notificationStream.postNotification(event1);
@@ -51,7 +52,7 @@ BOOST_AUTO_TEST_CASE(Post)
   advanceClocks(1_ms);
 
   BOOST_REQUIRE_EQUAL(face.sentData.size(), 1);
-  BOOST_CHECK_EQUAL(face.sentData[0].getName(), "/localhost/nfd/NotificationStreamTest/%FE%00");
+  BOOST_CHECK_EQUAL(face.sentData[0].getName(), "/localhost/nfd/NotificationStreamTest/seq=0");
   SimpleNotification decoded1;
   BOOST_CHECK_NO_THROW(decoded1.wireDecode(face.sentData[0].getContent().blockFromValue()));
   BOOST_CHECK_EQUAL(decoded1.getMessage(), "msg1");
@@ -62,7 +63,7 @@ BOOST_AUTO_TEST_CASE(Post)
   advanceClocks(1_ms);
 
   BOOST_REQUIRE_EQUAL(face.sentData.size(), 2);
-  BOOST_CHECK_EQUAL(face.sentData[1].getName(), "/localhost/nfd/NotificationStreamTest/%FE%01");
+  BOOST_CHECK_EQUAL(face.sentData[1].getName(), "/localhost/nfd/NotificationStreamTest/seq=1");
   SimpleNotification decoded2;
   BOOST_CHECK_NO_THROW(decoded2.wireDecode(face.sentData[1].getContent().blockFromValue()));
   BOOST_CHECK_EQUAL(decoded2.getMessage(), "msg2");

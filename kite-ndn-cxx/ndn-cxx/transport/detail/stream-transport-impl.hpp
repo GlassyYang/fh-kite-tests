@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_TRANSPORT_DETAIL_STREAM_TRANSPORT_IMPL_HPP
-#define NDN_TRANSPORT_DETAIL_STREAM_TRANSPORT_IMPL_HPP
+#ifndef NDN_CXX_TRANSPORT_DETAIL_STREAM_TRANSPORT_IMPL_HPP
+#define NDN_CXX_TRANSPORT_DETAIL_STREAM_TRANSPORT_IMPL_HPP
 
 #include "ndn-cxx/transport/transport.hpp"
 
@@ -28,6 +28,7 @@
 #include <boost/asio/write.hpp>
 
 #include <list>
+#include <queue>
 
 namespace ndn {
 namespace detail {
@@ -42,8 +43,7 @@ class StreamTransportImpl : public std::enable_shared_from_this<StreamTransportI
 {
 public:
   using Impl = StreamTransportImpl<BaseTransport, Protocol>;
-  using BlockSequence = std::list<Block>;
-  using TransmissionQueue = std::list<BlockSequence>;
+  using TransmissionQueue = std::queue<Block, std::list<Block>>;
 
   StreamTransportImpl(BaseTransport& transport, boost::asio::io_service& ioService)
     : m_transport(transport)
@@ -85,7 +85,7 @@ public:
 
     m_transport.m_isConnected = false;
     m_transport.m_isReceiving = false;
-    m_transmissionQueue.clear();
+    TransmissionQueue{}.swap(m_transmissionQueue); // clear the queue
   }
 
   void
@@ -114,20 +114,15 @@ public:
   }
 
   void
-  send(const Block& wire)
+  send(const Block& block)
   {
-    BlockSequence sequence;
-    sequence.push_back(wire);
-    send(std::move(sequence));
-  }
+    m_transmissionQueue.push(block);
 
-  void
-  send(const Block& header, const Block& payload)
-  {
-    BlockSequence sequence;
-    sequence.push_back(header);
-    sequence.push_back(payload);
-    send(std::move(sequence));
+    if (m_transport.m_isConnected && m_transmissionQueue.size() == 1) {
+      asyncWrite();
+    }
+    // if not connected or there's another transmission in progress (m_transmissionQueue.size() > 1),
+    // the next write will be scheduled either in connectHandler or in asyncWriteHandler
   }
 
 protected:
@@ -162,48 +157,32 @@ protected:
   }
 
   void
-  send(BlockSequence&& sequence)
-  {
-    m_transmissionQueue.emplace_back(sequence);
-
-    if (m_transport.m_isConnected && m_transmissionQueue.size() == 1) {
-      asyncWrite();
-    }
-
-    // if not connected or there is transmission in progress (m_transmissionQueue.size() > 1),
-    // next write will be scheduled either in connectHandler or in asyncWriteHandler
-  }
-
-  void
   asyncWrite()
   {
     BOOST_ASSERT(!m_transmissionQueue.empty());
-    boost::asio::async_write(m_socket, m_transmissionQueue.front(),
-                             bind(&Impl::handleAsyncWrite, this->shared_from_this(), _1,
-                                  m_transmissionQueue.begin()));
-  }
+    boost::asio::async_write(m_socket, boost::asio::buffer(m_transmissionQueue.front()),
+      // capture a copy of the shared_ptr to "this" to prevent deallocation
+      [this, self = this->shared_from_this()] (const auto& error, size_t) {
+        if (error) {
+          if (error == boost::system::errc::operation_canceled) {
+            // async receive has been explicitly cancelled (e.g., socket close)
+            return;
+          }
+          m_transport.close();
+          NDN_THROW(Transport::Error(error, "error while writing data to socket"));
+        }
 
-  void
-  handleAsyncWrite(const boost::system::error_code& error, TransmissionQueue::iterator queueItem)
-  {
-    if (error) {
-      if (error == boost::system::errc::operation_canceled) {
-        // async receive has been explicitly cancelled (e.g., socket close)
-        return;
-      }
-      m_transport.close();
-      NDN_THROW(Transport::Error(error, "error while writing data to socket"));
-    }
+        if (!m_transport.m_isConnected) {
+          return; // queue has been already cleared
+        }
 
-    if (!m_transport.m_isConnected) {
-      return; // queue has been already cleared
-    }
+        BOOST_ASSERT(!m_transmissionQueue.empty());
+        m_transmissionQueue.pop();
 
-    m_transmissionQueue.erase(queueItem);
-
-    if (!m_transmissionQueue.empty()) {
-      asyncWrite();
-    }
+        if (!m_transmissionQueue.empty()) {
+          asyncWrite();
+        }
+      });
   }
 
   void
@@ -211,42 +190,39 @@ protected:
   {
     m_socket.async_receive(boost::asio::buffer(m_inputBuffer + m_inputBufferSize,
                                                MAX_NDN_PACKET_SIZE - m_inputBufferSize), 0,
-                           bind(&Impl::handleAsyncReceive, this->shared_from_this(), _1, _2));
-  }
+      // capture a copy of the shared_ptr to "this" to prevent deallocation
+      [this, self = this->shared_from_this()] (const auto& error, size_t nBytesRecvd) {
+        if (error) {
+          if (error == boost::system::errc::operation_canceled) {
+            // async receive has been explicitly cancelled (e.g., socket close)
+            return;
+          }
+          m_transport.close();
+          NDN_THROW(Transport::Error(error, "error while receiving data from socket"));
+        }
 
-  void
-  handleAsyncReceive(const boost::system::error_code& error, std::size_t nBytesRecvd)
-  {
-    if (error) {
-      if (error == boost::system::errc::operation_canceled) {
-        // async receive has been explicitly cancelled (e.g., socket close)
-        return;
-      }
-      m_transport.close();
-      NDN_THROW(Transport::Error(error, "error while receiving data from socket"));
-    }
+        m_inputBufferSize += nBytesRecvd;
+        // do magic
 
-    m_inputBufferSize += nBytesRecvd;
-    // do magic
+        std::size_t offset = 0;
+        bool hasProcessedSome = processAllReceived(m_inputBuffer, offset, m_inputBufferSize);
+        if (!hasProcessedSome && m_inputBufferSize == MAX_NDN_PACKET_SIZE && offset == 0) {
+          m_transport.close();
+          NDN_THROW(Transport::Error("input buffer full, but a valid TLV cannot be decoded"));
+        }
 
-    std::size_t offset = 0;
-    bool hasProcessedSome = processAllReceived(m_inputBuffer, offset, m_inputBufferSize);
-    if (!hasProcessedSome && m_inputBufferSize == MAX_NDN_PACKET_SIZE && offset == 0) {
-      m_transport.close();
-      NDN_THROW(Transport::Error("input buffer full, but a valid TLV cannot be decoded"));
-    }
+        if (offset > 0) {
+          if (offset != m_inputBufferSize) {
+            std::copy(m_inputBuffer + offset, m_inputBuffer + m_inputBufferSize, m_inputBuffer);
+            m_inputBufferSize -= offset;
+          }
+          else {
+            m_inputBufferSize = 0;
+          }
+        }
 
-    if (offset > 0) {
-      if (offset != m_inputBufferSize) {
-        std::copy(m_inputBuffer + offset, m_inputBuffer + m_inputBufferSize, m_inputBuffer);
-        m_inputBufferSize -= offset;
-      }
-      else {
-        m_inputBufferSize = 0;
-      }
-    }
-
-    asyncReceive();
+        asyncReceive();
+      });
   }
 
   bool
@@ -255,7 +231,7 @@ protected:
     while (offset < nBytesAvailable) {
       bool isOk = false;
       Block element;
-      std::tie(isOk, element) = Block::fromBuffer(buffer + offset, nBytesAvailable - offset);
+      std::tie(isOk, element) = Block::fromBuffer({buffer + offset, nBytesAvailable - offset});
       if (!isOk)
         return false;
 
@@ -271,7 +247,6 @@ protected:
   typename Protocol::socket m_socket;
   uint8_t m_inputBuffer[MAX_NDN_PACKET_SIZE];
   size_t m_inputBufferSize = 0;
-
   TransmissionQueue m_transmissionQueue;
   boost::asio::steady_timer m_connectTimer;
   bool m_isConnecting = false;
@@ -280,4 +255,4 @@ protected:
 } // namespace detail
 } // namespace ndn
 
-#endif // NDN_TRANSPORT_DETAIL_STREAM_TRANSPORT_IMPL_HPP
+#endif // NDN_CXX_TRANSPORT_DETAIL_STREAM_TRANSPORT_IMPL_HPP

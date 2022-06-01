@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_UTIL_DUMMY_CLIENT_FACE_HPP
-#define NDN_UTIL_DUMMY_CLIENT_FACE_HPP
+#ifndef NDN_CXX_UTIL_DUMMY_CLIENT_FACE_HPP
+#define NDN_CXX_UTIL_DUMMY_CLIENT_FACE_HPP
 
 #include "ndn-cxx/face.hpp"
 #include "ndn-cxx/util/signal.hpp"
@@ -29,7 +29,7 @@
 namespace ndn {
 namespace util {
 
-/** \brief a client-side face for unit testing
+/** \brief A client-side face for unit testing.
  */
 class DummyClientFace : public ndn::Face
 {
@@ -67,6 +67,10 @@ public:
      */
     bool enableRegistrationReply;
 
+    /** \brief FaceId used in prefix registration replies.
+     */
+    uint64_t registrationReplyFaceId = 1;
+
     /** \brief if not empty, face.processEvents() will be overridden by this function
      */
     std::function<void(time::milliseconds)> processEventsOverride;
@@ -98,7 +102,7 @@ public:
   DummyClientFace(boost::asio::io_service& ioService, KeyChain& keyChain,
                   const Options& options = Options());
 
-  ~DummyClientFace();
+  ~DummyClientFace() override;
 
   /** \brief cause the Face to receive an interest
    */
@@ -138,7 +142,7 @@ private:
   enablePacketLogging();
 
   void
-  enableRegistrationReply();
+  enableRegistrationReply(uint64_t faceId);
 
   void
   doProcessEvents(time::milliseconds timeout, bool keepThread) override;
@@ -197,4 +201,4 @@ NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
 } // namespace util
 } // namespace ndn
 
-#endif // NDN_UTIL_DUMMY_CLIENT_FACE_HPP
+#endif // NDN_CXX_UTIL_DUMMY_CLIENT_FACE_HPP

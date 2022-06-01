@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,11 +19,12 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_UTIL_IO_HPP
-#define NDN_UTIL_IO_HPP
+#ifndef NDN_CXX_UTIL_IO_HPP
+#define NDN_CXX_UTIL_IO_HPP
 
 #include "ndn-cxx/encoding/block.hpp"
 #include "ndn-cxx/util/concepts.hpp"
+#include "ndn-cxx/util/optional.hpp"
 
 #include <fstream>
 
@@ -61,7 +62,7 @@ namespace detail {
 
 template<typename T>
 static void
-checkInnerError(typename T::Error*)
+checkNestedError(typename T::Error*)
 {
   static_assert(std::is_convertible<typename T::Error*, tlv::Error*>::value,
                 "T::Error, if defined, must be a subclass of ndn::tlv::Error");
@@ -69,56 +70,83 @@ checkInnerError(typename T::Error*)
 
 template<typename T>
 static void
-checkInnerError(...)
+checkNestedError(...)
 {
   // T::Error is not defined
 }
 
 } // namespace detail
 
-/** \brief Reads bytes from a stream until EOF.
- *  \return a Buffer containing the bytes read from the stream
- *  \throw Error error during loading
- *  \throw std::invalid_argument the specified encoding is not supported
+/**
+ * \brief Reads bytes from a stream until EOF.
+ * \return a Buffer containing the bytes read from the stream
+ * \throw Error An error occurred, e.g., malformed input.
+ * \throw std::invalid_argument The specified encoding is not supported.
  */
 shared_ptr<Buffer>
 loadBuffer(std::istream& is, IoEncoding encoding = BASE64);
 
-/** \brief Reads a TLV block from a stream.
- *  \return a Block, or nullopt if an error occurs
+/**
+ * \brief Reads a TLV element of type `T` from a stream.
+ * \tparam T Class type representing the TLV element; must be WireDecodable.
+ * \return the parsed TLV element
+ * \throw Error An error occurred, e.g., malformed input.
+ * \throw std::invalid_argument The specified encoding is not supported.
  */
-optional<Block>
-loadBlock(std::istream& is, IoEncoding encoding = BASE64);
+template<typename T>
+T
+loadTlv(std::istream& is, IoEncoding encoding = BASE64)
+{
+  BOOST_CONCEPT_ASSERT((WireDecodable<T>));
 
-/** \brief Reads a TLV element from a stream.
- *  \tparam T type of TLV element; `T` must be WireDecodable and the nested type
- *            `T::Error`, if defined, must be a subclass of ndn::tlv::Error
- *  \return the TLV element, or nullptr if an error occurs
+  auto buf = loadBuffer(is, encoding);
+  try {
+    return T(Block(buf));
+  }
+  catch (const std::exception& e) {
+    NDN_THROW_NESTED(Error("Decode error during load: "s + e.what()));
+  }
+}
+
+/**
+ * \brief Reads a TLV element from a stream.
+ * \tparam T Type of TLV element; `T` must be WireDecodable and the nested type
+ *           `T::Error`, if defined, must be a subclass of ndn::tlv::Error.
+ * \return the TLV element, or nullptr if an error occurs
+ * \note This function has a peculiar error handling behavior. Consider using loadTlv() instead.
  */
 template<typename T>
 shared_ptr<T>
 load(std::istream& is, IoEncoding encoding = BASE64)
 {
   BOOST_CONCEPT_ASSERT((WireDecodable<T>));
-  detail::checkInnerError<T>(nullptr);
+  detail::checkNestedError<T>(nullptr);
 
-  auto block = loadBlock(is, encoding);
-  if (!block) {
+  Block block;
+  try {
+    block = Block(loadBuffer(is, encoding));
+  }
+  catch (const std::invalid_argument&) {
+    return nullptr;
+  }
+  catch (const std::runtime_error&) {
     return nullptr;
   }
 
   try {
-    return make_shared<T>(*block);
+    return make_shared<T>(block);
   }
   catch (const tlv::Error&) {
     return nullptr;
   }
 }
 
-/** \brief Reads a TLV element from a file.
- *  \tparam T type of TLV element; `T` must be WireDecodable and the nested type
- *            `T::Error`, if defined, must be a subclass of ndn::tlv::Error
- *  \return the TLV element, or nullptr if an error occurs
+/**
+ * \brief Reads a TLV element from a file.
+ * \tparam T Type of TLV element; `T` must be WireDecodable and the nested type
+ *           `T::Error`, if defined, must be a subclass of ndn::tlv::Error.
+ * \return the TLV element, or nullptr if an error occurs
+ * \note This function has a peculiar error handling behavior. Consider using loadTlv() instead.
  */
 template<typename T>
 shared_ptr<T>
@@ -128,19 +156,13 @@ load(const std::string& filename, IoEncoding encoding = BASE64)
   return load<T>(is, encoding);
 }
 
-/** \brief Writes a byte buffer to a stream.
- *  \throw Error error during saving
- *  \throw std::invalid_argument the specified encoding is not supported
+/**
+ * \brief Writes a sequence of bytes to a stream.
+ * \throw Error error during saving
+ * \throw std::invalid_argument the specified encoding is not supported
  */
 void
-saveBuffer(const uint8_t* buf, size_t size, std::ostream& os, IoEncoding encoding = BASE64);
-
-/** \brief Writes a TLV block to a stream.
- *  \throw Error error during saving
- *  \throw std::invalid_argument the specified encoding is not supported
- */
-void
-saveBlock(const Block& block, std::ostream& os, IoEncoding encoding = BASE64);
+saveBuffer(span<const uint8_t> buf, std::ostream& os, IoEncoding encoding = BASE64);
 
 /** \brief Writes a TLV element to a stream.
  *  \tparam T type of TLV element; `T` must be WireEncodable and the nested type
@@ -153,17 +175,17 @@ void
 save(const T& obj, std::ostream& os, IoEncoding encoding = BASE64)
 {
   BOOST_CONCEPT_ASSERT((WireEncodable<T>));
-  detail::checkInnerError<T>(nullptr);
+  detail::checkNestedError<T>(nullptr);
 
   Block block;
   try {
     block = obj.wireEncode();
   }
-  catch (const tlv::Error&) {
-    NDN_THROW_NESTED(Error("Encode error during save"));
+  catch (const tlv::Error& e) {
+    NDN_THROW_NESTED(Error("Encode error during save: "s + e.what()));
   }
 
-  saveBlock(block, os, encoding);
+  saveBuffer(block, os, encoding);
 }
 
 /** \brief Writes a TLV element to a file.
@@ -183,4 +205,4 @@ save(const T& obj, const std::string& filename, IoEncoding encoding = BASE64)
 } // namespace io
 } // namespace ndn
 
-#endif // NDN_UTIL_IO_HPP
+#endif // NDN_CXX_UTIL_IO_HPP

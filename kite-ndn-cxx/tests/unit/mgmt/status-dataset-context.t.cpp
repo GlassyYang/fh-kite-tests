@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -21,8 +21,7 @@
 
 #include "ndn-cxx/mgmt/status-dataset-context.hpp"
 
-#include "tests/boost-test.hpp"
-#include "tests/make-interest-data.hpp"
+#include "tests/test-common.hpp"
 
 namespace ndn {
 namespace mgmt {
@@ -37,24 +36,19 @@ private:
   {
     Name dataName;
     Block content;
-    time::milliseconds imsFresh;
     bool isFinalBlock;
   };
 
 protected:
   StatusDatasetContextFixture()
     : interest(makeInterest("/test/context/interest"))
-    , contentBlock(makeStringBlock(tlv::Content, "/test/data/content"))
     , context(*interest,
-              [this] (const Name& dataName, const Block& content,
-                      time::milliseconds imsFresh, bool isFinalBlock) {
-                SendDataArgs args{dataName, content, imsFresh, isFinalBlock};
-                sendDataHistory.push_back(args);
+              [this] (auto&&... args) {
+                sendDataHistory.push_back({std::forward<decltype(args)>(args)...});
               },
-              [this] (const ControlResponse& resp) {
+              [this] (const auto& resp) {
                 sendNackHistory.push_back(resp);
               })
-    , defaultImsFresh(1000_ms)
   {
   }
 
@@ -65,27 +59,21 @@ protected:
     return name.appendSegment(segmentNo);
   }
 
-  Block
+  ConstBufferPtr
   concatenateDataContent() const
   {
-    EncodingBuffer encoder;
-    size_t valueLength = 0;
+    auto buf = std::make_shared<Buffer>();
     for (const auto& args : sendDataHistory) {
-      const auto& content = args.content;
-      valueLength += encoder.appendByteArray(content.value(), content.value_size());
+      buf->insert(buf->end(), args.content.value_begin(), args.content.value_end());
     }
-    encoder.prependVarNumber(valueLength);
-    encoder.prependVarNumber(tlv::Content);
-    return encoder.block();
+    return buf;
   }
 
 protected:
+  shared_ptr<Interest> interest;
+  StatusDatasetContext context;
   std::vector<SendDataArgs> sendDataHistory;
   std::vector<ControlResponse> sendNackHistory;
-  shared_ptr<Interest> interest;
-  Block contentBlock;
-  mgmt::StatusDatasetContext context;
-  time::milliseconds defaultImsFresh;
 };
 
 BOOST_AUTO_TEST_SUITE(Mgmt)
@@ -104,199 +92,208 @@ BOOST_AUTO_TEST_CASE(SetValid)
 {
   Name validPrefix = Name(interest->getName()).append("/valid");
   BOOST_CHECK_NO_THROW(context.setPrefix(validPrefix));
-  BOOST_CHECK(context.getPrefix()[-1].isVersion());
   BOOST_CHECK_EQUAL(context.getPrefix().getPrefix(-1), validPrefix);
+  BOOST_CHECK(context.getPrefix()[-1].isVersion());
+
+  // trailing version component is preserved
+  validPrefix.appendVersion(42);
+  BOOST_CHECK_NO_THROW(context.setPrefix(validPrefix));
+  BOOST_CHECK_EQUAL(context.getPrefix(), validPrefix);
 }
 
 BOOST_AUTO_TEST_CASE(SetInvalid)
 {
+  // Interest name is not a prefix of invalidPrefix
   Name invalidPrefix = Name(interest->getName()).getPrefix(-1).append("/invalid");
-  BOOST_CHECK_THROW(context.setPrefix(invalidPrefix), std::invalid_argument);
+  BOOST_CHECK_EXCEPTION(context.setPrefix(invalidPrefix), std::invalid_argument, [] (const auto& e) {
+    return e.what() == "prefix must start with the Interest's name"s;
+  });
+
+  // invalidPrefix contains a segment component
+  invalidPrefix = Name(interest->getName()).appendSegment(1);
+  BOOST_CHECK_EXCEPTION(context.setPrefix(invalidPrefix), std::invalid_argument, [] (const auto& e) {
+    return e.what() == "prefix must not contain a segment component"s;
+  });
 }
 
-BOOST_AUTO_TEST_CASE(SetValidWithAppendCalled)
+BOOST_AUTO_TEST_CASE(SetValidAfterAppend)
 {
   Name validPrefix = Name(interest->getName()).append("/valid");
-  context.append(contentBlock);
-  BOOST_CHECK_THROW(context.setPrefix(validPrefix), std::domain_error);
+  context.append({0x12, 0x34});
+  BOOST_CHECK_EXCEPTION(context.setPrefix(validPrefix), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call setPrefix() after append/end/reject"s;
+  });
 }
 
-BOOST_AUTO_TEST_CASE(SetValidWithEndCalled)
+BOOST_AUTO_TEST_CASE(SetValidAfterEnd)
 {
   Name validPrefix = Name(interest->getName()).append("/valid");
   context.end();
-  BOOST_CHECK_THROW(context.setPrefix(validPrefix), std::domain_error);
+  BOOST_CHECK_EXCEPTION(context.setPrefix(validPrefix), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call setPrefix() after append/end/reject"s;
+  });
 }
 
-BOOST_AUTO_TEST_CASE(SetValidWithRejectCalled)
+BOOST_AUTO_TEST_CASE(SetValidAfterReject)
 {
   Name validPrefix = Name(interest->getName()).append("/valid");
   context.reject();
-  BOOST_CHECK_THROW(context.setPrefix(validPrefix), std::domain_error);
+  BOOST_CHECK_EXCEPTION(context.setPrefix(validPrefix), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call setPrefix() after append/end/reject"s;
+  });
 }
 
 BOOST_AUTO_TEST_SUITE_END() // Prefix
-
-BOOST_AUTO_TEST_SUITE(Expiry)
-
-BOOST_AUTO_TEST_CASE(GetAndSet)
-{
-  auto period = 9527_ms;
-  BOOST_CHECK_EQUAL(context.getExpiry(), 1000_ms);
-  BOOST_CHECK_EQUAL(context.setExpiry(period).getExpiry(), period);
-}
-
-BOOST_AUTO_TEST_SUITE_END() // Expiry
 
 BOOST_AUTO_TEST_SUITE(Respond)
 
 BOOST_AUTO_TEST_CASE(Basic)
 {
-  BOOST_CHECK_NO_THROW(context.append(contentBlock));
-  BOOST_CHECK(sendDataHistory.empty()); // does not call end yet
+  const auto testBlock = makeStringBlock(tlv::Content, "TEST");
+  context.append(testBlock);
+  BOOST_CHECK(sendDataHistory.empty()); // end() not called yet
 
-  BOOST_CHECK_NO_THROW(context.end());
-
+  context.end();
   BOOST_REQUIRE_EQUAL(sendDataHistory.size(), 1);
-  const auto& args = sendDataHistory[0];
 
+  const auto& args = sendDataHistory[0];
   BOOST_CHECK_EQUAL(args.dataName, makeSegmentName(0));
-  BOOST_CHECK_EQUAL(args.content.blockFromValue(), contentBlock);
-  BOOST_CHECK_EQUAL(args.imsFresh, defaultImsFresh);
+  BOOST_CHECK_EQUAL(args.content.blockFromValue(), testBlock);
   BOOST_CHECK_EQUAL(args.isFinalBlock, true);
+}
+
+BOOST_AUTO_TEST_CASE(Empty)
+{
+  context.append({});
+  BOOST_TEST(sendDataHistory.empty()); // end() not called yet
+
+  context.end();
+  BOOST_TEST_REQUIRE(sendDataHistory.size() == 1);
+
+  const auto& args = sendDataHistory[0];
+  BOOST_TEST(args.dataName == makeSegmentName(0));
+  BOOST_TEST(args.content.value_size() == 0);
+  BOOST_TEST(args.isFinalBlock);
 }
 
 BOOST_AUTO_TEST_CASE(Large)
 {
-  static Block largeBlock = [] () -> Block {
-    EncodingBuffer encoder;
-    size_t maxBlockSize = MAX_NDN_PACKET_SIZE >> 1;
-    for (size_t i = 0; i < maxBlockSize; ++i) {
-      encoder.prependByte(1);
-    }
-    encoder.prependVarNumber(maxBlockSize);
-    encoder.prependVarNumber(tlv::Content);
-    return encoder.block();
-  }();
+  const std::vector<uint8_t> big(10000, 'A');
+  context.append(big);
+  BOOST_CHECK_EQUAL(sendDataHistory.size(), 1);
 
-  BOOST_CHECK_NO_THROW(context.append(largeBlock));
-  BOOST_CHECK_NO_THROW(context.end());
-
-  // two segments are generated
+  context.end();
   BOOST_REQUIRE_EQUAL(sendDataHistory.size(), 2);
 
-  // check segment0
+  // check segment 0
   BOOST_CHECK_EQUAL(sendDataHistory[0].dataName, makeSegmentName(0));
-  BOOST_CHECK_EQUAL(sendDataHistory[0].imsFresh, defaultImsFresh);
   BOOST_CHECK_EQUAL(sendDataHistory[0].isFinalBlock, false);
 
-  // check segment1
+  // check segment 1
   BOOST_CHECK_EQUAL(sendDataHistory[1].dataName, makeSegmentName(1));
-  BOOST_CHECK_EQUAL(sendDataHistory[1].imsFresh, defaultImsFresh);
   BOOST_CHECK_EQUAL(sendDataHistory[1].isFinalBlock, true);
 
   // check data content
-  auto contentLargeBlock = concatenateDataContent();
-  BOOST_CHECK_NO_THROW(contentLargeBlock.parse());
-  BOOST_REQUIRE_EQUAL(contentLargeBlock.elements().size(), 1);
-  BOOST_CHECK_EQUAL(contentLargeBlock.elements()[0], largeBlock);
+  BOOST_TEST(*concatenateDataContent() == big, boost::test_tools::per_element());
 }
 
 BOOST_AUTO_TEST_CASE(MultipleSmall)
 {
-  size_t nBlocks = 100;
+  const size_t nBlocks = 1000;
+  const auto contentBlock = makeStringBlock(0xFFFF, "Test Data Content");
   for (size_t i = 0 ; i < nBlocks ; i ++) {
-    BOOST_CHECK_NO_THROW(context.append(contentBlock));
+    context.append(contentBlock);
   }
-  BOOST_CHECK_NO_THROW(context.end());
+  context.end();
 
-  // check data to in-memory storage
-  BOOST_REQUIRE_EQUAL(sendDataHistory.size(), 1);
-  BOOST_CHECK_EQUAL(sendDataHistory[0].dataName, makeSegmentName(0));
-  BOOST_CHECK_EQUAL(sendDataHistory[0].imsFresh, defaultImsFresh);
-  BOOST_CHECK_EQUAL(sendDataHistory[0].isFinalBlock, true);
+  BOOST_TEST_REQUIRE(sendDataHistory.size() == 3);
+  BOOST_TEST(sendDataHistory[0].dataName == makeSegmentName(0));
+  BOOST_TEST(!sendDataHistory[0].isFinalBlock);
+  BOOST_TEST(sendDataHistory[1].dataName == makeSegmentName(1));
+  BOOST_TEST(!sendDataHistory[1].isFinalBlock);
+  BOOST_TEST(sendDataHistory[2].dataName == makeSegmentName(2));
+  BOOST_TEST(sendDataHistory[2].isFinalBlock);
 
-  auto contentMultiBlocks = concatenateDataContent();
-  BOOST_CHECK_NO_THROW(contentMultiBlocks.parse());
-  BOOST_CHECK_EQUAL(contentMultiBlocks.elements().size(), nBlocks);
-  for (auto&& element : contentMultiBlocks.elements()) {
-    BOOST_CHECK_EQUAL(element, contentBlock);
+  Block contentMultiBlocks(tlv::Content, concatenateDataContent());
+  contentMultiBlocks.parse();
+  BOOST_TEST(contentMultiBlocks.elements().size() == nBlocks);
+  for (const auto& element : contentMultiBlocks.elements()) {
+    BOOST_TEST(element == contentBlock, boost::test_tools::per_element());
   }
 }
 
 BOOST_AUTO_TEST_SUITE_END() // Respond
 
-BOOST_AUTO_TEST_SUITE(Reject)
-
-BOOST_AUTO_TEST_CASE(Basic)
+BOOST_AUTO_TEST_CASE(Reject)
 {
   BOOST_CHECK_NO_THROW(context.reject());
   BOOST_REQUIRE_EQUAL(sendNackHistory.size(), 1);
   BOOST_CHECK_EQUAL(sendNackHistory[0].getCode(), 400);
 }
 
-BOOST_AUTO_TEST_SUITE_END() // Reject
-
 class AbnormalStateTestFixture
 {
 protected:
-  AbnormalStateTestFixture()
-    : context(Interest("/abnormal-state"), bind([]{}), bind([]{}))
-  {
-  }
-
-protected:
-  mgmt::StatusDatasetContext context;
+  StatusDatasetContext context{Interest("/abnormal-state"), [] (auto&&...) {}, [] (auto&&...) {}};
 };
 
 BOOST_FIXTURE_TEST_SUITE(AbnormalState, AbnormalStateTestFixture)
 
 BOOST_AUTO_TEST_CASE(AppendReject)
 {
-  const uint8_t buf[] = {0x82, 0x01, 0x02};
-  BOOST_CHECK_NO_THROW(context.append(Block(buf, sizeof(buf))));
-  BOOST_CHECK_THROW(context.reject(), std::domain_error);
+  BOOST_CHECK_NO_THROW(context.append({0x82, 0x01, 0x02}));
+  BOOST_CHECK_EXCEPTION(context.reject(), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call reject() after append/end"s;
+  });
 }
 
 BOOST_AUTO_TEST_CASE(AppendEndReject)
 {
-  const uint8_t buf[] = {0x82, 0x01, 0x02};
-  BOOST_CHECK_NO_THROW(context.append(Block(buf, sizeof(buf))));
+  BOOST_CHECK_NO_THROW(context.append({0x82, 0x01, 0x02}));
   BOOST_CHECK_NO_THROW(context.end());
-  BOOST_CHECK_THROW(context.reject(), std::domain_error);
+  BOOST_CHECK_EXCEPTION(context.reject(), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call reject() after append/end"s;
+  });
 }
 
 BOOST_AUTO_TEST_CASE(EndAppend)
 {
   BOOST_CHECK_NO_THROW(context.end());
-  // end, append -> error
-  const uint8_t buf[] = {0x82, 0x01, 0x02};
-  BOOST_CHECK_THROW(context.append(Block(buf, sizeof(buf))), std::domain_error);
+  BOOST_CHECK_EXCEPTION(context.append({0x82, 0x01, 0x02}), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call append() on a finalized context"s;
+  });
 }
 
 BOOST_AUTO_TEST_CASE(EndEnd)
 {
   BOOST_CHECK_NO_THROW(context.end());
-  BOOST_CHECK_THROW(context.end(), std::domain_error);
+  BOOST_CHECK_EXCEPTION(context.end(), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call end() on a finalized context"s;
+  });
 }
 
 BOOST_AUTO_TEST_CASE(EndReject)
 {
   BOOST_CHECK_NO_THROW(context.end());
-  BOOST_CHECK_THROW(context.reject(), std::domain_error);
+  BOOST_CHECK_EXCEPTION(context.reject(), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call reject() after append/end"s;
+  });
 }
 
 BOOST_AUTO_TEST_CASE(RejectAppend)
 {
   BOOST_CHECK_NO_THROW(context.reject());
-  const uint8_t buf[] = {0x82, 0x01, 0x02};
-  BOOST_CHECK_THROW(context.append(Block(buf, sizeof(buf))), std::domain_error);
+  BOOST_CHECK_EXCEPTION(context.append({0x82, 0x01, 0x02}), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call append() on a finalized context"s;
+  });
 }
 
 BOOST_AUTO_TEST_CASE(RejectEnd)
 {
   BOOST_CHECK_NO_THROW(context.reject());
-  BOOST_CHECK_THROW(context.end(), std::domain_error);
+  BOOST_CHECK_EXCEPTION(context.end(), std::logic_error, [] (const auto& e) {
+    return e.what() == "cannot call end() on a finalized context"s;
+  });
 }
 
 BOOST_AUTO_TEST_SUITE_END() // AbnormalState

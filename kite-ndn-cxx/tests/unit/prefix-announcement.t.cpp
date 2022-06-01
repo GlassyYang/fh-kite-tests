@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,9 +22,8 @@
 #include "ndn-cxx/prefix-announcement.hpp"
 #include "ndn-cxx/encoding/tlv-nfd.hpp"
 
-#include "tests/boost-test.hpp"
-#include "tests/identity-management-fixture.hpp"
-#include "tests/make-interest-data.hpp"
+#include "tests/key-chain-fixture.hpp"
+#include "tests/test-common.hpp"
 
 namespace ndn {
 namespace tests {
@@ -35,8 +34,8 @@ static Data
 makePrefixAnnData()
 {
   return Data(
-    "067A 071A announced-name=/net/example 08036E6574 08076578616D706C65"
-    "          keyword-prefix-ann=20025041 version=0802FD01 segment=08020000"
+    "0678 0718 announced-name=/net/example 08036E6574 08076578616D706C65"
+    "          keyword-prefix-ann=20025041 version=360101 segment=320100"
     "     1403 content-type=prefix-ann 180105"
     "     1530 expire in one hour 6D040036EE80"
     "          validity FD00FD26 FD00FE0F323031383130333054303030303030"
@@ -163,7 +162,7 @@ BOOST_AUTO_TEST_CASE(DecodeBad)
   });
 }
 
-BOOST_FIXTURE_TEST_CASE(EncodeEmpty, IdentityManagementFixture)
+BOOST_FIXTURE_TEST_CASE(EncodeEmpty, KeyChainFixture)
 {
   PrefixAnnouncement pa;
   BOOST_CHECK(!pa.getData());
@@ -172,7 +171,7 @@ BOOST_FIXTURE_TEST_CASE(EncodeEmpty, IdentityManagementFixture)
   BOOST_CHECK(!pa.getValidityPeriod());
 
   const Data& data = pa.toData(m_keyChain, signingWithSha256(), 5);
-  BOOST_CHECK_EQUAL(data.getName(), "/32=PA/%FD%05/%00%00");
+  BOOST_CHECK_EQUAL(data.getName(), "/32=PA/v=5/seg=0");
   BOOST_CHECK_EQUAL(data.getContentType(), tlv::ContentType_PrefixAnn);
   BOOST_REQUIRE(pa.getData());
   BOOST_CHECK_EQUAL(*pa.getData(), data);
@@ -185,7 +184,7 @@ BOOST_FIXTURE_TEST_CASE(EncodeEmpty, IdentityManagementFixture)
   BOOST_CHECK_EQUAL(pa, decoded);
 }
 
-BOOST_FIXTURE_TEST_CASE(EncodeNoValidity, IdentityManagementFixture)
+BOOST_FIXTURE_TEST_CASE(EncodeNoValidity, KeyChainFixture)
 {
   PrefixAnnouncement pa;
   pa.setAnnouncedName("/net/example");
@@ -193,7 +192,7 @@ BOOST_FIXTURE_TEST_CASE(EncodeNoValidity, IdentityManagementFixture)
   pa.setExpiration(1_h);
 
   const Data& data = pa.toData(m_keyChain, signingWithSha256(), 1);
-  BOOST_CHECK_EQUAL(data.getName(), "/net/example/32=PA/%FD%01/%00%00");
+  BOOST_CHECK_EQUAL(data.getName(), "/net/example/32=PA/v=1/seg=0");
   BOOST_CHECK_EQUAL(data.getContentType(), tlv::ContentType_PrefixAnn);
 
   const Block& payload = data.getContent();
@@ -209,7 +208,7 @@ BOOST_FIXTURE_TEST_CASE(EncodeNoValidity, IdentityManagementFixture)
   BOOST_CHECK_EQUAL(pa, decoded);
 }
 
-BOOST_FIXTURE_TEST_CASE(EncodeWithValidity, IdentityManagementFixture)
+BOOST_FIXTURE_TEST_CASE(EncodeWithValidity, KeyChainFixture)
 {
   PrefixAnnouncement pa;
   pa.setAnnouncedName("/net/example");
@@ -254,6 +253,14 @@ BOOST_AUTO_TEST_CASE(Modify)
                                                  time::fromIsoString("20180212T235959")));
   BOOST_CHECK(!pa2.getData());
   BOOST_CHECK_NE(pa2, pa);
+}
+
+BOOST_AUTO_TEST_CASE(KeywordComponent)
+{
+  BOOST_CHECK_EQUAL(PrefixAnnouncement::getKeywordComponent().wireEncode(),
+                    "20 02 5041"_block);
+  BOOST_CHECK_EQUAL(PrefixAnnouncement::getKeywordComponent().toUri(name::UriFormat::CANONICAL),
+                    "32=PA");
 }
 
 BOOST_AUTO_TEST_SUITE_END() // TestPrefixAnnouncement

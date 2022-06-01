@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,7 +22,7 @@
 #include "ndn-cxx/util/scheduler.hpp"
 
 #include "tests/boost-test.hpp"
-#include "tests/unit/unit-test-time-fixture.hpp"
+#include "tests/unit/io-fixture.hpp"
 
 #include <boost/lexical_cast.hpp>
 
@@ -30,16 +30,10 @@ namespace ndn {
 namespace scheduler {
 namespace tests {
 
-class SchedulerFixture : public ndn::tests::UnitTestTimeFixture
+class SchedulerFixture : public ndn::tests::IoFixture
 {
-public:
-  SchedulerFixture()
-    : scheduler(io)
-  {
-  }
-
-public:
-  Scheduler scheduler;
+protected:
+  Scheduler scheduler{m_io};
 };
 
 BOOST_AUTO_TEST_SUITE(Util)
@@ -115,7 +109,7 @@ public:
   void
   reschedule()
   {
-    EventId eventId = scheduler.schedule(100_ms, bind(&SelfRescheduleFixture::reschedule, this));
+    EventId eventId = scheduler.schedule(100_ms, [this] { reschedule(); });
     selfEventId.cancel();
     selfEventId = eventId;
 
@@ -131,7 +125,7 @@ public:
     selfEventId.cancel();
 
     if (count < 5)  {
-      selfEventId = scheduler.schedule(100_ms, bind(&SelfRescheduleFixture::reschedule2, this));
+      selfEventId = scheduler.schedule(100_ms, [this] { reschedule2(); });
       count++;
     }
   }
@@ -156,21 +150,21 @@ public:
 
 BOOST_FIXTURE_TEST_CASE(Reschedule, SelfRescheduleFixture)
 {
-  selfEventId = scheduler.schedule(0_s, bind(&SelfRescheduleFixture::reschedule, this));
+  selfEventId = scheduler.schedule(0_s, [this] { reschedule(); });
   BOOST_REQUIRE_NO_THROW(advanceClocks(50_ms, 1000_ms));
   BOOST_CHECK_EQUAL(count, 5);
 }
 
 BOOST_FIXTURE_TEST_CASE(Reschedule2, SelfRescheduleFixture)
 {
-  selfEventId = scheduler.schedule(0_s, bind(&SelfRescheduleFixture::reschedule2, this));
+  selfEventId = scheduler.schedule(0_s, [this] { reschedule2(); });
   BOOST_REQUIRE_NO_THROW(advanceClocks(50_ms, 1000_ms));
   BOOST_CHECK_EQUAL(count, 5);
 }
 
 BOOST_FIXTURE_TEST_CASE(Reschedule3, SelfRescheduleFixture)
 {
-  selfEventId = scheduler.schedule(0_s, bind(&SelfRescheduleFixture::reschedule3, this));
+  selfEventId = scheduler.schedule(0_s, [this] { reschedule3(); });
   BOOST_REQUIRE_NO_THROW(advanceClocks(50_ms, 1000_ms));
   BOOST_CHECK_EQUAL(count, 6);
 }
@@ -201,9 +195,8 @@ BOOST_FIXTURE_TEST_CASE(CancelAll, CancelAllFixture)
 
 BOOST_AUTO_TEST_CASE(CancelAllWithScopedEventId) // Bug 3691
 {
-  Scheduler sched(io);
-  ScopedEventId eid = sched.schedule(10_ms, []{});
-  sched.cancelAllEvents();
+  ScopedEventId eid = scheduler.schedule(10_ms, []{});
+  scheduler.cancelAllEvents();
   eid.cancel(); // should not crash
 
   // avoid "test case [...] did not check any assertions" message from Boost.Test
@@ -305,7 +298,6 @@ BOOST_AUTO_TEST_CASE(ToString)
   BOOST_CHECK_EQUAL(boost::lexical_cast<std::string>(eid), nullString);
 
   eid = scheduler.schedule(10_ms, []{});
-  BOOST_TEST_MESSAGE("eid=" << eid);
   BOOST_CHECK_NE(boost::lexical_cast<std::string>(eid), nullString);
 }
 

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -21,8 +21,6 @@
 
 #include "ndn-cxx/security/pib/key.hpp"
 #include "ndn-cxx/security/pib/impl/key-impl.hpp"
-#include "ndn-cxx/security/pib/impl/pib-memory.hpp"
-#include "ndn-cxx/security/pib/pib.hpp"
 
 #include "tests/boost-test.hpp"
 #include "tests/unit/security/pib/pib-data-fixture.hpp"
@@ -32,8 +30,6 @@ namespace security {
 namespace pib {
 namespace tests {
 
-using namespace ndn::security::tests;
-
 BOOST_AUTO_TEST_SUITE(Security)
 BOOST_AUTO_TEST_SUITE(Pib)
 BOOST_FIXTURE_TEST_SUITE(TestKey, PibDataFixture)
@@ -41,54 +37,61 @@ BOOST_FIXTURE_TEST_SUITE(TestKey, PibDataFixture)
 BOOST_AUTO_TEST_CASE(ValidityChecking)
 {
   Key key;
-  BOOST_CHECK(!key);
-  BOOST_CHECK_EQUAL(static_cast<bool>(key), false);
+  BOOST_TEST(!key);
+  BOOST_TEST(key == Key());
 
-  auto keyImpl = make_shared<detail::KeyImpl>(id1Key1Name, id1Key1.data(), id1Key1.size(),
-                                              make_shared<pib::PibMemory>());
-  key = Key(keyImpl);
-  BOOST_CHECK(key);
-  BOOST_CHECK_EQUAL(!key, false);
+  auto impl = std::make_shared<detail::KeyImpl>(id1Key1Name, id1Key1,
+                                                makePibWithKey(id1Key1Name, id1Key1));
+  key = Key(impl);
+  BOOST_TEST(key);
+  BOOST_TEST(key != Key());
+
+  impl.reset();
+  BOOST_TEST(!key);
 }
 
-// pib::Key is a wrapper of pib::detail::KeyImpl.  Since the functionalities of KeyImpl
-// have already been tested in detail/key-impl.t.cpp, we only test the shared property
-// of pib::Key in this test case.
+// pib::Key is a wrapper of pib::detail::KeyImpl. Since the functionality of KeyImpl is
+// already tested in key-impl.t.cpp, we only test the shared property of pib::Key in
+// this test case.
 BOOST_AUTO_TEST_CASE(SharedImpl)
 {
-  auto keyImpl = make_shared<detail::KeyImpl>(id1Key1Name, id1Key1.data(), id1Key1.size(),
-                                              make_shared<pib::PibMemory>());
+  auto keyImpl = std::make_shared<detail::KeyImpl>(id1Key1Name, id1Key1,
+                                                   makePibWithKey(id1Key1Name, id1Key1));
   Key key1(keyImpl);
   Key key2(keyImpl);
-  BOOST_CHECK_EQUAL(key1, key2);
-  BOOST_CHECK_NE(key1, Key());
-  BOOST_CHECK_EQUAL(Key(), Key());
 
+  BOOST_TEST(key1 == key2);
+  BOOST_TEST(key1 != Key());
+  BOOST_TEST(Key() != key2);
+  BOOST_TEST(Key() == Key());
+
+  BOOST_CHECK_THROW(key2.getCertificate(id1Key1Cert1.getName()), pib::Pib::Error);
   key1.addCertificate(id1Key1Cert1);
-  BOOST_CHECK_NO_THROW(key2.getCertificate(id1Key1Cert1.getName()));
+  BOOST_TEST(key2.getCertificate(id1Key1Cert1.getName()) == id1Key1Cert1);
+
   key2.removeCertificate(id1Key1Cert1.getName());
   BOOST_CHECK_THROW(key1.getCertificate(id1Key1Cert1.getName()), pib::Pib::Error);
 
   key1.setDefaultCertificate(id1Key1Cert1);
-  BOOST_CHECK_NO_THROW(key2.getDefaultCertificate());
+  BOOST_TEST(key2.getDefaultCertificate() == id1Key1Cert1);
 }
 
 BOOST_AUTO_TEST_CASE(Helpers)
 {
-  BOOST_CHECK_EQUAL(v2::constructKeyName("/hello", name::Component("world")), "/hello/KEY/world");
+  BOOST_CHECK_EQUAL(constructKeyName("/hello", name::Component("world")), "/hello/KEY/world");
 
-  BOOST_CHECK_EQUAL(v2::isValidKeyName("/hello"), false);
-  BOOST_CHECK_EQUAL(v2::isValidKeyName("/hello/KEY"), false);
-  BOOST_CHECK_EQUAL(v2::isValidKeyName("/hello/KEY/world"), true);
+  BOOST_CHECK_EQUAL(isValidKeyName("/hello"), false);
+  BOOST_CHECK_EQUAL(isValidKeyName("/hello/KEY"), false);
+  BOOST_CHECK_EQUAL(isValidKeyName("/hello/KEY/world"), true);
 
-  BOOST_CHECK_EQUAL(v2::isValidKeyName("/KEY/hello"), true);
-  BOOST_CHECK_EQUAL(v2::isValidKeyName("/hello/world/KEY/!"), true);
+  BOOST_CHECK_EQUAL(isValidKeyName("/KEY/hello"), true);
+  BOOST_CHECK_EQUAL(isValidKeyName("/hello/world/KEY/!"), true);
 
-  BOOST_CHECK_EQUAL(v2::extractIdentityFromKeyName("/KEY/hello"), "/");
-  BOOST_CHECK_EQUAL(v2::extractIdentityFromKeyName("/hello/KEY/world"), "/hello");
-  BOOST_CHECK_EQUAL(v2::extractIdentityFromKeyName("/hello/world/KEY/!"), "/hello/world");
+  BOOST_CHECK_EQUAL(extractIdentityFromKeyName("/KEY/hello"), "/");
+  BOOST_CHECK_EQUAL(extractIdentityFromKeyName("/hello/KEY/world"), "/hello");
+  BOOST_CHECK_EQUAL(extractIdentityFromKeyName("/hello/world/KEY/!"), "/hello/world");
 
-  BOOST_CHECK_THROW(v2::extractIdentityFromKeyName("/hello"), std::invalid_argument);
+  BOOST_CHECK_THROW(extractIdentityFromKeyName("/hello"), std::invalid_argument);
 }
 
 BOOST_AUTO_TEST_SUITE_END() // TestKey

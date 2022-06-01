@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
-/**
- * Copyright (c) 2015-2016,  Arizona Board of Regents.
+/*
+ * Copyright (c) 2015-2022,  Arizona Board of Regents.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -16,32 +16,22 @@
  * You should have received a copy of the GNU General Public License along with
  * ndn-tools, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
  *
- * @author: Eric Newberry <enewberry@email.arizona.edu>
- * @author: Jerald Paul Abraham <jeraldabraham@email.arizona.edu>
- * @author: Teng Liang <philoliang@email.arizona.edu>
+ * @author Eric Newberry <enewberry@email.arizona.edu>
+ * @author Jerald Paul Abraham <jeraldabraham@email.arizona.edu>
+ * @author Teng Liang <philoliang@email.arizona.edu>
  */
 
 #include "statistics-collector.hpp"
 
-namespace ndn {
-namespace ping {
-namespace client {
+namespace ndn::ping::client {
 
 StatisticsCollector::StatisticsCollector(Ping& ping, const Options& options)
   : m_ping(ping)
   , m_options(options)
-  , m_nSent(0)
-  , m_nReceived(0)
-  , m_nNacked(0)
-  , m_pingStartTime(time::steady_clock::now())
-  , m_minRtt(std::numeric_limits<double>::max())
-  , m_maxRtt(0.0)
-  , m_sumRtt(0.0)
-  , m_sumRttSquared(0.0)
 {
-  m_ping.afterData.connect(bind(&StatisticsCollector::recordData, this, _2));
-  m_ping.afterNack.connect(bind(&StatisticsCollector::recordNack, this));
-  m_ping.afterTimeout.connect(bind(&StatisticsCollector::recordTimeout, this));
+  m_ping.afterData.connect([this] (auto&&, Rtt rtt) { recordData(rtt); });
+  m_ping.afterNack.connect([this] (auto&&...) { recordNack(); });
+  m_ping.afterTimeout.connect([this] (auto&&...) { recordTimeout(); });
 }
 
 void
@@ -53,7 +43,6 @@ StatisticsCollector::recordData(Rtt rtt)
   double rttMs = rtt.count();
 
   m_minRtt = std::min(m_minRtt, rttMs);
-
   m_maxRtt = std::max(m_maxRtt, rttMs);
 
   m_sumRtt += rttMs;
@@ -74,7 +63,7 @@ StatisticsCollector::recordTimeout()
 }
 
 Statistics
-StatisticsCollector::computeStatistics()
+StatisticsCollector::computeStatistics() const
 {
   Statistics statistics;
 
@@ -123,7 +112,7 @@ Statistics::printSummary(std::ostream& os) const
        << " ms";
   }
 
-  return os << std::endl;
+  return os << "\n";
 }
 
 std::ostream&
@@ -154,6 +143,4 @@ operator<<(std::ostream& os, const Statistics& statistics)
   return os;
 }
 
-} // namespace client
-} // namespace ping
-} // namespace ndn
+} // namespace ndn::ping::client

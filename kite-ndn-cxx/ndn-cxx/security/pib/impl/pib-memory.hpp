@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_PIB_IMPL_PIB_MEMORY_HPP
-#define NDN_SECURITY_PIB_IMPL_PIB_MEMORY_HPP
+#ifndef NDN_CXX_SECURITY_PIB_IMPL_PIB_MEMORY_HPP
+#define NDN_CXX_SECURITY_PIB_IMPL_PIB_MEMORY_HPP
 
 #include "ndn-cxx/security/pib/pib-impl.hpp"
 
@@ -29,17 +29,17 @@ namespace security {
 namespace pib {
 
 /**
- * @brief An in-memory implementation of Pib
+ * @brief An in-memory PIB implementation.
  *
- * All the contents in Pib are stored in memory
- * and have the same lifetime as the implementation instance.
+ * All the contents of an instance of this PIB are stored in memory only
+ * and have the same lifetime as the class instance itself.
  */
 class PibMemory : public PibImpl
 {
 public:
   /**
-   * @brief Create memory based PIB backend
-   * @param location Not used (required by the PIB-registration interface)
+   * @brief Create memory-based PIB backend.
+   * @param location Ignored (required by the PIB registration interface)
    */
   explicit
   PibMemory(const std::string& location = "");
@@ -48,11 +48,14 @@ public:
   getScheme();
 
 public: // TpmLocator management
+  std::string
+  getTpmLocator() const override
+  {
+    return m_tpmLocator;
+  }
+
   void
   setTpmLocator(const std::string& tpmLocator) override;
-
-  std::string
-  getTpmLocator() const override;
 
 public: // Identity management
   bool
@@ -81,7 +84,7 @@ public: // Key management
   hasKey(const Name& keyName) const override;
 
   void
-  addKey(const Name& identity, const Name& keyName, const uint8_t* key, size_t keyLen) override;
+  addKey(const Name& identity, const Name& keyName, span<const uint8_t> key) override;
 
   void
   removeKey(const Name& keyName) override;
@@ -103,12 +106,12 @@ public: // Certificate management
   hasCertificate(const Name& certName) const override;
 
   void
-  addCertificate(const v2::Certificate& certificate) override;
+  addCertificate(const Certificate& certificate) override;
 
   void
   removeCertificate(const Name& certName) override;
 
-  v2::Certificate
+  Certificate
   getCertificate(const Name& certName) const override;
 
   std::set<Name>
@@ -117,32 +120,30 @@ public: // Certificate management
   void
   setDefaultCertificateOfKey(const Name& keyName, const Name& certName) override;
 
-  v2::Certificate
+  Certificate
   getDefaultCertificateOfKey(const Name& keyName) const override;
 
 private:
   std::string m_tpmLocator;
 
-  bool m_hasDefaultIdentity;
-  Name m_defaultIdentity;
-
   std::set<Name> m_identities;
+  optional<Name> m_defaultIdentity;
 
-  /// @brief identity => default key Name
+  /// identity name => default key name
   std::map<Name, Name> m_defaultKeys;
 
-  /// @brief keyName => keyBits
+  /// key name => key bits
   std::map<Name, Buffer> m_keys;
 
-  /// @brief keyName => default certificate Name
+  /// key name => default certificate name
   std::map<Name, Name> m_defaultCerts;
 
-  /// @brief certificate Name => certificate
-  std::map<Name, v2::Certificate> m_certs;
+  /// certificate name => certificate object
+  std::map<Name, Certificate> m_certs;
 };
 
 } // namespace pib
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_PIB_IMPL_PIB_MEMORY_HPP
+#endif // NDN_CXX_SECURITY_PIB_IMPL_PIB_MEMORY_HPP

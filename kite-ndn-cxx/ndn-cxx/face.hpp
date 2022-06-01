@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_FACE_HPP
-#define NDN_FACE_HPP
+#ifndef NDN_CXX_FACE_HPP
+#define NDN_CXX_FACE_HPP
 
 #include "ndn-cxx/data.hpp"
 #include "ndn-cxx/interest.hpp"
@@ -517,11 +517,7 @@ using ScopedPendingInterestHandle = detail::ScopedCancelHandle<PendingInterestHa
 class RegisteredPrefixHandle : public detail::CancelHandle
 {
 public:
-  RegisteredPrefixHandle() noexcept
-  {
-    // This could have been '= default', but there's compiler bug in Apple clang 9.0.0,
-    // see https://stackoverflow.com/a/44693603
-  }
+  RegisteredPrefixHandle() noexcept = default;
 
   /** \brief Unregister the prefix.
    */
@@ -593,4 +589,4 @@ using ScopedInterestFilterHandle = detail::ScopedCancelHandle<InterestFilterHand
 
 } // namespace ndn
 
-#endif // NDN_FACE_HPP
+#endif // NDN_CXX_FACE_HPP

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -29,20 +29,6 @@
 
 namespace ndn {
 namespace security {
-
-const Name&
-SigningInfo::getEmptyName()
-{
-  static Name emptyName;
-  return emptyName;
-}
-
-const SignatureInfo&
-SigningInfo::getEmptySignatureInfo()
-{
-  static SignatureInfo emptySignatureInfo;
-  return emptySignatureInfo;
-}
 
 const Name&
 SigningInfo::getDigestSha256Identity()
@@ -156,7 +142,7 @@ SigningInfo::setSigningHmacKey(const std::string& hmacKey)
     transform::base64Decode(false) >>
     transform::streamSink(os);
   m_hmacKey = make_shared<transform::PrivateKey>();
-  m_hmacKey->loadRaw(KeyType::HMAC, os.buf()->data(), os.buf()->size());
+  m_hmacKey->loadRaw(KeyType::HMAC, *os.buf());
 
   // generate key name
   m_name = getHmacIdentity();
@@ -215,8 +201,7 @@ operator<<(std::ostream& os, const SigningInfo& si)
     case SigningInfo::SIGNER_TYPE_HMAC:
       return os << "id:" << si.getSignerName();
   }
-  NDN_THROW(std::invalid_argument("Unknown signer type"));
-  return os;
+  return os << "Unknown signer type " << to_underlying(si.getSignerType());
 }
 
 std::ostream&
@@ -228,8 +213,7 @@ operator<<(std::ostream& os, const SignedInterestFormat& format)
     case SignedInterestFormat::V02:
       return os << "Signed Interest v0.2";
   }
-  NDN_THROW(std::invalid_argument("Unknown signed Interest format"));
-  return os;
+  return os << "Unknown signed Interest format " << to_underlying(format);
 }
 
 } // namespace security

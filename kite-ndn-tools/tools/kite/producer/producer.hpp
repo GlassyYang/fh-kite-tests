@@ -23,6 +23,7 @@
 #define NDN_TOOLS_KITE_PRODUCER_HPP
 
 #include "core/common.hpp"
+#include <ndn-cxx/kite/request.hpp>
 
 namespace ndn
 {
@@ -30,7 +31,6 @@ namespace ndn
   {
     namespace producer
     {
-
       /**
        * @brief RV prefix, producer suffix pair
        */
@@ -66,7 +66,7 @@ namespace ndn
          *
          * @param name incoming interest name
          */
-        signal::Signal<Producer, Name> afterReceive;
+        util::signal::Signal<Producer, Name> afterReceive;
 
         /**
          * @brief Sets the Interest filter

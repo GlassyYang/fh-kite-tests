@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -29,8 +29,7 @@
 
 #include "ndnpeek.hpp"
 
-namespace ndn {
-namespace peek {
+namespace ndn::peek {
 
 NdnPeek::NdnPeek(Face& face, const PeekOptions& options)
   : m_options(options)
@@ -63,22 +62,21 @@ NdnPeek::createInterest() const
   Interest interest(m_options.name);
   interest.setCanBePrefix(m_options.canBePrefix);
   interest.setMustBeFresh(m_options.mustBeFresh);
-  if (m_options.link) {
-    interest.setForwardingHint(m_options.link->getDelegationList());
-  }
+  interest.setForwardingHint(m_options.forwardingHint);
   interest.setInterestLifetime(m_options.interestLifetime);
-  interest.setHopLimit(m_options.hopLimit);
+  if (m_options.hopLimit) {
+    interest.setHopLimit(*m_options.hopLimit);
+  }
   if (m_options.applicationParameters) {
     interest.setApplicationParameters(m_options.applicationParameters);
   }
   if (m_options.kiteHint)
   {
-    DelegationList dl;
-    Delegation d;
-    d.preference = tlv::ContentType_KiteAck;
-    d.name = *m_options.kiteHint;
-    dl.insert(d);
-    interest.setForwardingHint(dl);
+    Name fh;
+    fh.append(ndn::kite::KITE_KEYWORD);
+    Name rv(*m_options.kiteHint);
+    fh.append(rv);
+    interest.setForwardingHint({fh});
   }
   
   if (m_options.isVerbose) {
@@ -86,6 +84,12 @@ NdnPeek::createInterest() const
   }
 
   return interest;
+}
+
+static void
+writeToCout(span<const uint8_t> bytes)
+{
+  std::cout.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
 }
 
 void
@@ -101,12 +105,10 @@ NdnPeek::onData(const Data& data)
   }
 
   if (m_options.wantPayloadOnly) {
-    const Block& block = data.getContent();
-    std::cout.write(reinterpret_cast<const char*>(block.value()), block.value_size());
+    writeToCout(data.getContent().value_bytes());
   }
   else {
-    const Block& block = data.wireEncode();
-    std::cout.write(reinterpret_cast<const char*>(block.wire()), block.size());
+    writeToCout(data.wireEncode());
   }
 }
 
@@ -116,7 +118,7 @@ NdnPeek::onNack(const lp::Nack& nack)
   m_result = Result::NACK;
   m_timeoutEvent.cancel();
 
-  lp::NackHeader header = nack.getHeader();
+  const auto& header = nack.getHeader();
   if (m_options.isVerbose) {
     std::cerr << "NACK: " << header.getReason() << "\nRTT: "
               << time::duration_cast<time::milliseconds>(time::steady_clock::now() - m_sendTime).count()
@@ -127,8 +129,7 @@ NdnPeek::onNack(const lp::Nack& nack)
     std::cout << header.getReason() << std::endl;
   }
   else {
-    const Block& block = header.wireEncode();
-    std::cout.write(reinterpret_cast<const char*>(block.wire()), block.size());
+    writeToCout(header.wireEncode());
   }
 }
 
@@ -143,5 +144,4 @@ NdnPeek::onTimeout()
   }
 }
 
-} // namespace peek
-} // namespace ndn
+} // namespace ndn::peek

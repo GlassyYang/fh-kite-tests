@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,23 +22,41 @@
 #include "ndn-cxx/security/certificate-cache.hpp"
 
 #include "tests/boost-test.hpp"
-#include "tests/unit/identity-management-time-fixture.hpp"
+#include "tests/key-chain-fixture.hpp"
+#include "tests/unit/clock-fixture.hpp"
 
 namespace ndn {
 namespace security {
 inline namespace v2 {
 namespace tests {
 
-BOOST_AUTO_TEST_SUITE(Security)
+using namespace ndn::tests;
 
-class CertificateCacheFixture : public ndn::tests::IdentityManagementTimeFixture
+class CertificateCacheFixture : public ClockFixture, public KeyChainFixture
 {
 public:
   CertificateCacheFixture()
     : certCache(10_s)
   {
-    identity = addIdentity("/TestCertificateCache/");
+    identity = m_keyChain.createIdentity("/TestCertificateCache");
     cert = identity.getDefaultKey().getDefaultCertificate();
+  }
+
+  void
+  checkFindByInterest(const Name& name, bool canBePrefix, optional<Certificate> expected) const
+  {
+    Interest interest(name);
+    interest.setCanBePrefix(canBePrefix);
+    BOOST_TEST_CONTEXT(interest) {
+      auto found = certCache.find(interest);
+      if (expected) {
+        BOOST_REQUIRE(found != nullptr);
+        BOOST_CHECK_EQUAL(found->getName(), expected->getName());
+      }
+      else {
+        BOOST_CHECK(found == nullptr);
+      }
+    }
   }
 
 public:
@@ -47,6 +65,7 @@ public:
   Certificate cert;
 };
 
+BOOST_AUTO_TEST_SUITE(Security)
 BOOST_FIXTURE_TEST_SUITE(TestCertificateCache, CertificateCacheFixture)
 
 BOOST_AUTO_TEST_CASE(RemovalTime)
@@ -73,13 +92,13 @@ BOOST_AUTO_TEST_CASE(FindByInterest)
 {
   BOOST_CHECK_NO_THROW(certCache.insert(cert));
 
-  // Find by interest
-  BOOST_CHECK(certCache.find(Interest(cert.getIdentity())) != nullptr);
-  BOOST_CHECK(certCache.find(Interest(cert.getKeyName())) != nullptr);
-  BOOST_CHECK(certCache.find(Interest(Name(cert.getName()).appendVersion())) == nullptr);
+  checkFindByInterest(cert.getIdentity(), true, cert);
+  checkFindByInterest(cert.getKeyName(), true, cert);
+  checkFindByInterest(cert.getName(), false, cert);
+  checkFindByInterest(Name(cert.getName()).appendVersion(), true, nullopt);
 
   advanceClocks(12_s);
-  BOOST_CHECK(certCache.find(Interest(cert.getIdentity())) == nullptr);
+  checkFindByInterest(cert.getIdentity(), true, nullopt);
 }
 
 BOOST_AUTO_TEST_SUITE_END() // TestCertificateCache

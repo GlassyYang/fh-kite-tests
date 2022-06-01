@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2011-2019,  Regents of the University of California.
+ * Copyright (c) 2011-2022,  Regents of the University of California.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -22,17 +22,20 @@
 
 #include <ndn-cxx/util/ostream-joiner.hpp>
 
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options/parsers.hpp>
+#include <boost/program_options/variables_map.hpp>
+
 #include <sstream>
 
-namespace ndn {
-namespace dump {
+namespace ndn::dump {
 
 namespace po = boost::program_options;
 
 static void
-usage(std::ostream& os, const std::string& appName, const po::options_description& options)
+usage(std::ostream& os, std::string_view progName, const po::options_description& options)
 {
-  os << "Usage: " << appName << " [options] [pcap-filter]\n"
+  os << "Usage: " << progName << " [options] [pcap-filter]\n"
      << "\n"
      << "Default pcap-filter:\n"
      << "  '" << NdnDump::getDefaultPcapFilter() << "'\n"
@@ -138,8 +141,7 @@ main(int argc, char* argv[])
   return 0;
 }
 
-} // namespace dump
-} // namespace ndn
+} // namespace ndn::dump
 
 int
 main(int argc, char* argv[])

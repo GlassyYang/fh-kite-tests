@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_KEY_CHAIN_HPP
-#define NDN_SECURITY_KEY_CHAIN_HPP
+#ifndef NDN_CXX_SECURITY_KEY_CHAIN_HPP
+#define NDN_CXX_SECURITY_KEY_CHAIN_HPP
 
 #include "ndn-cxx/interest.hpp"
 #include "ndn-cxx/security/certificate.hpp"
@@ -32,6 +32,47 @@
 
 namespace ndn {
 namespace security {
+
+/**
+ * @brief Options to KeyChain::makeCertificate() .
+ */
+struct MakeCertificateOptions
+{
+  /**
+   * @brief Certificate name IssuerId component.
+   *
+   * Default is "NA".
+   */
+  name::Component issuerId = Certificate::DEFAULT_ISSUER_ID;
+
+  /**
+   * @brief Certificate name version component.
+   *
+   * Default is deriving from current timestamp using the logic of Name::appendVersion() .
+   */
+  optional<uint64_t> version;
+
+  /**
+   * @brief Certificate packet FreshnessPeriod.
+   *
+   * As required by the certificate format, this must be positive.
+   * Setting this to zero or negative causes @c std::invalid_argument exception.
+   *
+   * Default is 1 hour.
+   */
+  time::milliseconds freshnessPeriod = 1_h;
+
+  /**
+   * @brief Certificate ValidityPeriod.
+   *
+   * It isn't an error to specify a ValidityPeriod that does not include the current time
+   * or has zero duration, but the certificate won't be valid.
+   *
+   * Default is a ValidityPeriod from now until 365 days later.
+   */
+  optional<ValidityPeriod> validity;
+};
+
 inline namespace v2 {
 
 /**
@@ -96,16 +137,19 @@ public:
   ~KeyChain();
 
   const Pib&
-  getPib() const
+  getPib() const noexcept
   {
     return *m_pib;
   }
 
   const Tpm&
-  getTpm() const
+  getTpm() const noexcept
   {
     return *m_tpm;
   }
+
+  static const KeyParams&
+  getDefaultKeyParams();
 
 public: // Identity management
   /**
@@ -236,7 +280,7 @@ public: // Certificate management
 
 public: // signing
   /**
-   * @brief Sign a Data packet according to the supplied signing information
+   * @brief Sign a Data packet according to the supplied signing information.
    *
    * This method uses the supplied signing information in @p params to sign @p data as follows:
    * - It selects a private key and its associated certificate to sign the packet.
@@ -258,7 +302,7 @@ public: // signing
   sign(Data& data, const SigningInfo& params = SigningInfo());
 
   /**
-   * @brief Sign an Interest according to the supplied signing information
+   * @brief Sign an Interest according to the supplied signing information.
    *
    * This method uses the supplied signing information in @p params to sign @p interest as follows:
    * - It selects a private key and its associated certificate to sign the packet.
@@ -274,7 +318,6 @@ public: // signing
    *   element. Otherwise, it will be appended to the end of the name of @p interest as a
    *   SignatureValue block.
    *
-   *
    * @param interest The interest to sign
    * @param params The signing parameters
    * @throw Error Signing failed
@@ -282,29 +325,43 @@ public: // signing
    *                                or certificate does not exist
    * @see SigningInfo
    * @see SignatureInfo
-   * @see docs/specs/signed-interest.rst
+   * @see https://named-data.net/doc/NDN-packet-spec/0.3/signed-interest.html
    */
   void
   sign(Interest& interest, const SigningInfo& params = SigningInfo());
 
   /**
-   * @brief Sign buffer according to the supplied signing information @p params
-   * @deprecated Sign Interests and Data directly
-   *
-   * If @p params refers to an identity, the method selects the default key of the identity.
-   * If @p params refers to a key or certificate, the method select the corresponding key.
-   *
-   * @param buffer The buffer to sign
-   * @param bufferLength The buffer size
-   * @param params The signing parameters
-   * @return SignatureValue TLV block
-   * @throw Error Signing failed
-   * @see SigningInfo
-   * @see SignatureInfo
+   * @brief Create and sign a certificate packet.
+   * @param publicKey Public key being certified. It does not need to exist in this KeyChain.
+   * @param params Signing parameters. The referenced key must exist in this KeyChain.
+   *               It may contain SignatureInfo for customizing KeyLocator and CustomTlv (including
+   *               AdditionalDescription), but ValidityPeriod will be overwritten.
+   * @param opts Optional arguments.
+   * @return A certificate of @p publicKey signed by a key from this KeyChain found by @p params .
+   * @throw std::invalid_argument @p opts.freshnessPeriod is not positive.
+   * @throw Error Certificate signing failure.
    */
-  [[deprecated("sign Interests and Data directly")]]
-  Block
-  sign(const uint8_t* buffer, size_t bufferLength, const SigningInfo& params = SigningInfo());
+  Certificate
+  makeCertificate(const pib::Key& publicKey, const SigningInfo& params = SigningInfo(),
+                  const MakeCertificateOptions& opts = {});
+
+  /**
+   * @brief Create and sign a certificate packet.
+   * @param certRequest Certificate request enclosing the public key being certified.
+   *                    It does not need to exist in this KeyChain.
+   * @param params Signing parameters. The referenced key must exist in this KeyChain.
+   *               It may contain SignatureInfo for customizing KeyLocator and CustomTlv (including
+   *               AdditionalDescription), but ValidityPeriod will be overwritten.
+   * @param opts Optional arguments.
+   * @return A certificate of the public key enclosed in @p certRequest signed by a key from this
+   *         KeyChain found by @p params .
+   * @throw std::invalid_argument @p opts.freshnessPeriod is not positive.
+   * @throw std::invalid_argument @p certRequest contains invalid public key.
+   * @throw Error Certificate signing failure.
+   */
+  Certificate
+  makeCertificate(const Certificate& certRequest, const SigningInfo& params = SigningInfo(),
+                  const MakeCertificateOptions& opts = {});
 
 public: // export & import
   /**
@@ -343,13 +400,6 @@ public: // export & import
   void
   importPrivateKey(const Name& keyName, shared_ptr<transform::PrivateKey> key);
 
-NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
-  /**
-   * @brief Derive SignatureTypeValue according to key type and digest algorithm.
-   */
-  static tlv::SignatureTypeValue
-  getSignatureType(KeyType keyType, DigestAlgorithm digestAlgorithm);
-
 public: // PIB & TPM backend registry
   /**
    * @brief Register a new PIB backend
@@ -359,7 +409,12 @@ public: // PIB & TPM backend registry
    */
   template<class PibBackendType>
   static void
-  registerPibBackend(const std::string& scheme);
+  registerPibBackend(const std::string& scheme)
+  {
+    getPibFactories().emplace(scheme, [] (const std::string& locator) {
+      return shared_ptr<pib::PibImpl>(new PibBackendType(locator));
+    });
+  }
 
   /**
    * @brief Register a new TPM backend
@@ -369,11 +424,16 @@ public: // PIB & TPM backend registry
    */
   template<class TpmBackendType>
   static void
-  registerTpmBackend(const std::string& scheme);
+  registerTpmBackend(const std::string& scheme)
+  {
+    getTpmFactories().emplace(scheme, [] (const std::string& locator) {
+      return unique_ptr<tpm::BackEnd>(new TpmBackendType(locator));
+    });
+  }
 
 private:
-  typedef std::map<std::string, function<std::shared_ptr<pib::PibImpl>(const std::string& location)>> PibFactories;
-  typedef std::map<std::string, function<unique_ptr<tpm::BackEnd>(const std::string& location)>> TpmFactories;
+  using PibFactories = std::map<std::string, std::function<shared_ptr<pib::PibImpl>(const std::string&)>>;
+  using TpmFactories = std::map<std::string, std::function<unique_ptr<tpm::BackEnd>(const std::string&)>>;
 
   static PibFactories&
   getPibFactories();
@@ -412,7 +472,17 @@ NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   static const std::string&
   getDefaultTpmLocator();
 
+  /**
+   * @brief Derive SignatureTypeValue according to key type and digest algorithm.
+   */
+  static tlv::SignatureTypeValue
+  getSignatureType(KeyType keyType, DigestAlgorithm digestAlgorithm);
+
 private: // signing
+  Certificate
+  makeCertificate(const Name& keyName, span<const uint8_t> publicKey, SigningInfo params,
+                  const MakeCertificateOptions& opts);
+
   /**
    * @brief Generate a self-signed certificate for a public key.
    *
@@ -432,49 +502,33 @@ private: // signing
   std::tuple<Name, SignatureInfo>
   prepareSignatureInfo(const SigningInfo& params);
 
+  std::tuple<Name, SignatureInfo>
+  prepareSignatureInfoSha256(const SigningInfo& params);
+
+  std::tuple<Name, SignatureInfo>
+  prepareSignatureInfoHmac(const SigningInfo& params);
+
+  std::tuple<Name, SignatureInfo>
+  prepareSignatureInfoWithIdentity(const SigningInfo& params, const pib::Identity& identity);
+
+  std::tuple<Name, SignatureInfo>
+  prepareSignatureInfoWithKey(const SigningInfo& params, const pib::Key& key,
+                              optional<Name> certName = nullopt);
+
   /**
-   * @brief Generate a SignatureValue block for byte ranges in @p bufs using a key with name
-   *        @p keyName and digest algorithm @p digestAlgorithm.
+   * @brief Generate and return a raw signature for the byte ranges in @p bufs using
+   *        the specified key and digest algorithm.
    */
   ConstBufferPtr
   sign(const InputBuffers& bufs, const Name& keyName, DigestAlgorithm digestAlgorithm) const;
 
-public:
-  /**
-   * @deprecated Use default constructor for SigningInfo
-   */
-  [[deprecated("use default constructor for SigningInfo")]]
-  static const SigningInfo&
-  getDefaultSigningInfo();
-
-  static const KeyParams&
-  getDefaultKeyParams();
-
 private:
-  std::unique_ptr<Pib> m_pib;
-  std::unique_ptr<Tpm> m_tpm;
+  unique_ptr<Pib> m_pib;
+  unique_ptr<Tpm> m_tpm;
 
   static std::string s_defaultPibLocator;
   static std::string s_defaultTpmLocator;
 };
-
-template<class PibType>
-inline void
-KeyChain::registerPibBackend(const std::string& scheme)
-{
-  getPibFactories().emplace(scheme, [] (const std::string& locator) {
-      return std::shared_ptr<pib::PibImpl>(new PibType(locator));
-    });
-}
-
-template<class TpmType>
-inline void
-KeyChain::registerTpmBackend(const std::string& scheme)
-{
-  getTpmFactories().emplace(scheme, [] (const std::string& locator) {
-      return unique_ptr<tpm::BackEnd>(new TpmType(locator));
-    });
-}
 
 /**
  * @brief Register Pib backend class in KeyChain
@@ -482,7 +536,7 @@ KeyChain::registerTpmBackend(const std::string& scheme)
  * This macro should be placed once in the implementation file of the
  * Pib backend class within the namespace where the type is declared.
  *
- * @note This interface is implementation detail and may change without notice.
+ * @note This interface is an implementation detail and may change without notice.
  */
 #define NDN_CXX_KEYCHAIN_REGISTER_PIB_BACKEND(PibType)     \
 static class NdnCxxAuto ## PibType ## PibRegistrationClass    \
@@ -490,7 +544,7 @@ static class NdnCxxAuto ## PibType ## PibRegistrationClass    \
 public:                                                       \
   NdnCxxAuto ## PibType ## PibRegistrationClass()             \
   {                                                           \
-    ::ndn::security::v2::KeyChain::registerPibBackend<PibType>(PibType::getScheme()); \
+    ::ndn::security::KeyChain::registerPibBackend<PibType>(PibType::getScheme()); \
   }                                                           \
 } ndnCxxAuto ## PibType ## PibRegistrationVariable
 
@@ -500,7 +554,7 @@ public:                                                       \
  * This macro should be placed once in the implementation file of the
  * Tpm backend class within the namespace where the type is declared.
  *
- * @note This interface is implementation detail and may change without notice.
+ * @note This interface is an implementation detail and may change without notice.
  */
 #define NDN_CXX_KEYCHAIN_REGISTER_TPM_BACKEND(TpmType)     \
 static class NdnCxxAuto ## TpmType ## TpmRegistrationClass    \
@@ -508,15 +562,15 @@ static class NdnCxxAuto ## TpmType ## TpmRegistrationClass    \
 public:                                                       \
   NdnCxxAuto ## TpmType ## TpmRegistrationClass()             \
   {                                                           \
-    ::ndn::security::v2::KeyChain::registerTpmBackend<TpmType>(TpmType::getScheme()); \
+    ::ndn::security::KeyChain::registerTpmBackend<TpmType>(TpmType::getScheme()); \
   }                                                           \
 } ndnCxxAuto ## TpmType ## TpmRegistrationVariable
 
 } // inline namespace v2
 } // namespace security
 
-using security::v2::KeyChain;
+using security::KeyChain;
 
 } // namespace ndn
 
-#endif // NDN_SECURITY_KEY_CHAIN_HPP
+#endif // NDN_CXX_SECURITY_KEY_CHAIN_HPP

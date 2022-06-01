@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_IMPL_FACE_IMPL_HPP
-#define NDN_IMPL_FACE_IMPL_HPP
+#ifndef NDN_CXX_IMPL_FACE_IMPL_HPP
+#define NDN_CXX_IMPL_FACE_IMPL_HPP
 
 #include "ndn-cxx/face.hpp"
 #include "ndn-cxx/impl/interest-filter-record.hpp"
@@ -33,7 +33,6 @@
 #include "ndn-cxx/mgmt/nfd/controller.hpp"
 #include "ndn-cxx/transport/tcp-transport.hpp"
 #include "ndn-cxx/transport/unix-transport.hpp"
-#include "ndn-cxx/util/config-file.hpp"
 #include "ndn-cxx/util/logger.hpp"
 #include "ndn-cxx/util/scheduler.hpp"
 #include "ndn-cxx/util/signal.hpp"
@@ -94,8 +93,8 @@ public: // consumer
     this->ensureConnected(true);
 
     const Interest& interest2 = *interest;
-    auto& entry = m_pendingInterestTable.put(id, std::move(interest), afterSatisfied, afterNacked,
-                                             afterTimeout, ref(m_scheduler));
+    auto& entry = m_pendingInterestTable.put(id, std::move(interest), afterSatisfied,
+                                             afterNacked, afterTimeout, m_scheduler);
 
     lp::Packet lpPacket;
     addFieldFromTag<lp::NextHopFaceIdField, lp::NextHopFaceIdTag>(lpPacket, interest2);
@@ -206,7 +205,7 @@ public: // producer
   processIncomingInterest(shared_ptr<const Interest> interest)
   {
     const Interest& interest2 = *interest;
-    auto& entry = m_pendingInterestTable.insert(std::move(interest), ref(m_scheduler));
+    auto& entry = m_pendingInterestTable.insert(std::move(interest), m_scheduler);
     dispatchInterest(entry, interest2);
   }
 
@@ -334,7 +333,7 @@ private:
   finishEncoding(lp::Packet&& lpPacket, Block wire, char pktType, const Name& name)
   {
     if (!lpPacket.empty()) {
-      lpPacket.add<lp::FragmentField>(std::make_pair(wire.begin(), wire.end()));
+      lpPacket.add<lp::FragmentField>({wire.begin(), wire.end()});
       wire = lpPacket.wireEncode();
     }
 
@@ -417,9 +416,9 @@ private:
 
   unique_ptr<boost::asio::io_service::work> m_ioServiceWork; // if thread needs to be preserved
 
-  friend class Face;
+  friend Face;
 };
 
 } // namespace ndn
 
-#endif // NDN_IMPL_FACE_IMPL_HPP
+#endif // NDN_CXX_IMPL_FACE_IMPL_HPP

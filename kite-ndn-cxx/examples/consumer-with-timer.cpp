@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -17,8 +17,6 @@
  * <http://www.gnu.org/licenses/>.
  *
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
- *
- * @author Alexander Afanasyev <http://lasr.cs.ucla.edu/afanasyev/index.html>
  */
 
 #include <ndn-cxx/face.hpp>
@@ -35,12 +33,6 @@ namespace examples {
 class ConsumerWithTimer
 {
 public:
-  ConsumerWithTimer()
-    : m_face(m_ioService) // Create face with io_service object
-    , m_scheduler(m_ioService)
-  {
-  }
-
   void
   run()
   {
@@ -48,15 +40,14 @@ public:
     interestName.appendVersion();
 
     Interest interest(interestName);
-    interest.setCanBePrefix(false);
     interest.setMustBeFresh(true);
     interest.setInterestLifetime(2_s);
 
     std::cout << "Sending Interest " << interest << std::endl;
     m_face.expressInterest(interest,
-                           bind(&ConsumerWithTimer::onData, this, _1, _2),
-                           bind(&ConsumerWithTimer::onNack, this, _1, _2),
-                           bind(&ConsumerWithTimer::onTimeout, this, _1));
+                           std::bind(&ConsumerWithTimer::onData, this, _1, _2),
+                           std::bind(&ConsumerWithTimer::onNack, this, _1, _2),
+                           std::bind(&ConsumerWithTimer::onTimeout, this, _1));
 
     // Schedule a new event
     m_scheduler.schedule(3_s, [this] { delayedInterest(); });
@@ -98,22 +89,21 @@ private:
     interestName.appendVersion();
 
     Interest interest(interestName);
-    interest.setCanBePrefix(false);
     interest.setMustBeFresh(true);
     interest.setInterestLifetime(2_s);
 
     std::cout << "Sending Interest " << interest << std::endl;
     m_face.expressInterest(interest,
-                           bind(&ConsumerWithTimer::onData, this, _1, _2),
-                           bind(&ConsumerWithTimer::onNack, this, _1, _2),
-                           bind(&ConsumerWithTimer::onTimeout, this, _1));
+                           std::bind(&ConsumerWithTimer::onData, this, _1, _2),
+                           std::bind(&ConsumerWithTimer::onNack, this, _1, _2),
+                           std::bind(&ConsumerWithTimer::onTimeout, this, _1));
   }
 
 private:
   // Explicitly create io_service object, which will be shared between Face and Scheduler
   boost::asio::io_service m_ioService;
-  Face m_face;
-  Scheduler m_scheduler;
+  Face m_face{m_ioService};
+  Scheduler m_scheduler{m_ioService};
 };
 
 } // namespace examples

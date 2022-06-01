@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -25,8 +25,8 @@
  *           Aliases imported in this file MUST NOT be used outside of ndn-cxx.
  */
 
-#ifndef NDN_DETAIL_COMMON_HPP
-#define NDN_DETAIL_COMMON_HPP
+#ifndef NDN_CXX_DETAIL_COMMON_HPP
+#define NDN_CXX_DETAIL_COMMON_HPP
 
 #include "ndn-cxx/detail/config.hpp"
 
@@ -74,9 +74,6 @@ using std::dynamic_pointer_cast;
 using std::const_pointer_cast;
 
 using std::function;
-using std::bind;
-using std::ref;
-using std::cref;
 
 using namespace std::string_literals;
 
@@ -84,8 +81,11 @@ using namespace std::string_literals;
 
 using namespace std::placeholders;
 
+#include <boost/version.hpp>
+
 /// \cond
 // Bug 2109 workaround
+#if BOOST_VERSION < 107600
 #define BOOST_BIND_NO_PLACEHOLDERS
 #include <boost/is_placeholder.hpp>
 namespace boost {
@@ -108,6 +108,7 @@ NDN_CXX_SPECIALIZE_BOOST_IS_PLACEHOLDER_FOR_STD_PLACEHOLDER(8)
 NDN_CXX_SPECIALIZE_BOOST_IS_PLACEHOLDER_FOR_STD_PLACEHOLDER(9)
 #undef NDN_CXX_SPECIALIZE_BOOST_IS_PLACEHOLDER_FOR_STD_PLACEHOLDER
 } // namespace boost
+#endif // BOOST_VERSION < 107600
 /// \endcond
 
 #include <boost/assert.hpp>
@@ -121,4 +122,4 @@ using boost::noncopyable;
 #include "ndn-cxx/util/backports.hpp"
 #include "ndn-cxx/util/exception.hpp"
 
-#endif // NDN_DETAIL_COMMON_HPP
+#endif // NDN_CXX_DETAIL_COMMON_HPP

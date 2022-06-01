@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_PIB_IMPL_KEY_IMPL_HPP
-#define NDN_SECURITY_PIB_IMPL_KEY_IMPL_HPP
+#ifndef NDN_CXX_SECURITY_PIB_IMPL_KEY_IMPL_HPP
+#define NDN_CXX_SECURITY_PIB_IMPL_KEY_IMPL_HPP
 
 #include "ndn-cxx/security/security-common.hpp"
 #include "ndn-cxx/security/pib/certificate-container.hpp"
@@ -34,149 +34,104 @@ class PibImpl;
 namespace detail {
 
 /**
- * @brief Backend instance of Key
+ * @brief Backend instance of Key.
  *
- * An Key has only one backend instance, but may have multiple frontend handles.
+ * A Key has only one backend instance, but may have multiple frontend handles.
  * Each frontend handle is associated with the only one backend KeyImpl.
  *
- * @throw PibImpl::Error when underlying implementation has non-semantic error.
+ * @throw PibImpl::Error When the underlying implementation has a non-semantic error.
+ * @sa Key
  */
 class KeyImpl : noncopyable
 {
 public:
   /**
-   * @brief Create a KeyImpl with @p keyName.
-   *
-   * If the key does not exist in the backend, it will be added.
-   * If a key with the same name already exists, it will be overwritten.
+   * @brief Create a key with name @p keyName.
    *
    * @param keyName The name of the key.
-   * @param key The public key to add.
-   * @param keyLen The length of the key.
-   * @param pibImpl The Pib backend implementation.
-   * @throw std::invalid_argument @p key is invalid.
+   * @param key The public key bits.
+   * @param pibImpl The PIB backend implementation.
+   * @pre The key must exist in the backend.
+   * @throw std::invalid_argument @p key is invalid or unsupported.
    */
-  KeyImpl(const Name& keyName, const uint8_t* key, size_t keyLen, shared_ptr<PibImpl> pibImpl);
+  KeyImpl(const Name& keyName, Buffer key, shared_ptr<PibImpl> pibImpl);
 
-  /**
-   * @brief Create a KeyImpl with @p keyName.
-   *
-   * @param keyName The name of the key.
-   * @param pibImpl The Pib backend implementation.
-   * @throw Pib::Error the key does not exist.
-   */
-  KeyImpl(const Name& keyName, shared_ptr<PibImpl> pibImpl);
+  // See security::pib::Key for the documentation of the following methods
 
-  /**
-   * @brief Get the name of the key.
-   */
   const Name&
   getName() const
   {
     return m_keyName;
   }
 
-  /**
-   * @brief Get the name of the belonging identity.
-   */
   const Name&
   getIdentity() const
   {
     return m_identity;
   }
 
-  /**
-   * @brief Get key type.
-   */
   KeyType
   getKeyType() const
   {
     return m_keyType;
   }
 
-  /**
-   * @brief Get public key bits.
-   */
-  const Buffer&
+  span<const uint8_t>
   getPublicKey() const
   {
     return m_key;
   }
 
-  /**
-   * @brief Add @p certificate.
-   *
-   * If no default certificate is set before, the new certificate will be set as the default
-   * certificate of the key.
-   *
-   * If a certificate with the same name (without implicit digest) already exists, it will
-   * be overwritten.
-   *
-   * @throw std::invalid_argument the certificate name does not match the key name.
-   */
   void
-  addCertificate(const v2::Certificate& certificate);
+  addCertificate(const Certificate& cert);
 
-  /**
-   * @brief Remove a certificate with @p certName.
-   * @throw std::invalid_argument @p certName does not match the key name.
-   */
   void
   removeCertificate(const Name& certName);
 
-  /**
-   * @brief Get a certificate with @p certName.
-   * @throw std::invalid_argument @p certName does not match the key name.
-   * @throw Pib::Error the certificate does not exist.
-   */
-  v2::Certificate
-  getCertificate(const Name& certName) const;
+  Certificate
+  getCertificate(const Name& certName) const
+  {
+    BOOST_ASSERT(m_certificates.isConsistent());
+    return m_certificates.get(certName);
+  }
 
-  /**
-   * @brief Get all the certificates for this key.
-   */
   const CertificateContainer&
-  getCertificates() const;
+  getCertificates() const
+  {
+    BOOST_ASSERT(m_certificates.isConsistent());
+    return m_certificates;
+  }
 
-  /**
-   * @brief Set an existing certificate with name @p certName as the default certificate.
-   * @throw std::invalid_argument @p certName does not match the key name.
-   * @throw Pib::Error the certificate does not exist.
-   * @return the default certificate
-   */
-  const v2::Certificate&
-  setDefaultCertificate(const Name& certName);
+  const Certificate&
+  setDefaultCertificate(const Name& certName)
+  {
+    return setDefaultCert(m_certificates.get(certName));
+  }
 
-  /**
-   * @brief Add @p certificate and set it as the default certificate for this key.
-   *
-   * If a certificate with the same name (without implicit digest) already exists, it will
-   * be overwritten.
-   *
-   * @throw std::invalid_argument @p certificate does not match the key name.
-   * @return the default certificate
-   */
-  const v2::Certificate&
-  setDefaultCertificate(const v2::Certificate& certificate);
+  void
+  setDefaultCertificate(const Certificate& cert)
+  {
+    m_certificates.add(cert);
+    setDefaultCert(cert);
+  }
 
-  /**
-   * @brief Get the default certificate for this key.
-   * @throw Pib::Error the default certificate does not exist.
-   */
-  const v2::Certificate&
+  const Certificate&
   getDefaultCertificate() const;
 
 private:
-  Name m_identity;
-  Name m_keyName;
-  Buffer m_key;
+  const Certificate&
+  setDefaultCert(Certificate cert);
+
+private:
+  const Name m_identity;
+  const Name m_keyName;
+  const Buffer m_key;
   KeyType m_keyType;
 
-  shared_ptr<PibImpl> m_pib;
+  const shared_ptr<PibImpl> m_pib;
 
   CertificateContainer m_certificates;
-  mutable bool m_isDefaultCertificateLoaded;
-  mutable v2::Certificate m_defaultCertificate;
+  mutable optional<Certificate> m_defaultCert;
 };
 
 } // namespace detail
@@ -184,4 +139,4 @@ private:
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_PIB_IMPL_KEY_IMPL_HPP
+#endif // NDN_CXX_SECURITY_PIB_IMPL_KEY_IMPL_HPP

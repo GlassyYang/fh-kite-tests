@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -25,6 +25,8 @@
 
 #include "pcap-helper.hpp"
 #include "ethernet-protocol.hpp"
+
+#include "common/privilege-helper.hpp"
 
 #include <pcap/pcap.h>
 #include <unistd.h>
@@ -63,9 +65,11 @@ PcapHelper::~PcapHelper()
 void
 PcapHelper::activate(int dlt)
 {
-  int ret = pcap_activate(m_pcap);
-  if (ret < 0)
-    NDN_THROW(Error("pcap_activate: " + std::string(pcap_statustostr(ret))));
+  PrivilegeHelper::runElevated([this] {
+    int ret = pcap_activate(m_pcap);
+    if (ret < 0)
+      NDN_THROW(Error("pcap_activate: " + std::string(pcap_statustostr(ret))));
+  });
 
   if (pcap_set_datalink(m_pcap, dlt) < 0)
     NDN_THROW(Error("pcap_set_datalink: " + getLastError()));
@@ -75,7 +79,7 @@ PcapHelper::activate(int dlt)
 }
 
 void
-PcapHelper::close()
+PcapHelper::close() noexcept
 {
   if (m_pcap) {
     pcap_close(m_pcap);
@@ -96,7 +100,7 @@ PcapHelper::getFd() const
 }
 
 std::string
-PcapHelper::getLastError() const
+PcapHelper::getLastError() const noexcept
 {
   return pcap_geterr(m_pcap);
 }
@@ -124,19 +128,19 @@ PcapHelper::setPacketFilter(const char* filter) const
     NDN_THROW(Error("pcap_setfilter: " + getLastError()));
 }
 
-std::tuple<const uint8_t*, size_t, std::string>
-PcapHelper::readNextPacket() const
+std::tuple<span<const uint8_t>, std::string>
+PcapHelper::readNextPacket() const noexcept
 {
   pcap_pkthdr* header;
   const uint8_t* packet;
 
   int ret = pcap_next_ex(m_pcap, &header, &packet);
   if (ret < 0)
-    return std::make_tuple(nullptr, 0, getLastError());
+    return {span<uint8_t>{}, getLastError()};
   else if (ret == 0)
-    return std::make_tuple(nullptr, 0, "timed out");
+    return {span<uint8_t>{}, "timed out"};
   else
-    return std::make_tuple(packet, header->caplen, "");
+    return {{packet, header->caplen}, ""};
 }
 
 } // namespace face

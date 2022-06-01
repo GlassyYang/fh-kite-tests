@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,7 +20,6 @@
  */
 
 #include "ndn-cxx/security/validator-config/checker.hpp"
-#include "ndn-cxx/security/command-interest-signer.hpp"
 #include "ndn-cxx/security/validation-policy.hpp"
 #include "ndn-cxx/security/validation-state.hpp"
 
@@ -35,11 +34,13 @@ namespace validator_config {
 namespace tests {
 
 using namespace ndn::tests;
+using namespace ndn::security::tests;
 
 BOOST_AUTO_TEST_SUITE(Security)
 BOOST_AUTO_TEST_SUITE(ValidatorConfig)
+BOOST_AUTO_TEST_SUITE(TestChecker)
 
-class CheckerFixture : public IdentityManagementFixture
+class CheckerFixture : public KeyChainFixture
 {
 public:
   CheckerFixture()
@@ -51,27 +52,42 @@ public:
   }
 
   static Name
-  makeKeyLocatorName(const Name& name)
+  makeKeyLocatorKeyName(const Name& name)
   {
-    return Name(name).append("KEY").append("v=1");
+    static PartialName suffix("KEY/keyid");
+    return Name(name).append(suffix);
+  }
+
+  static Name
+  makeKeyLocatorCertName(const Name& name)
+  {
+    static PartialName suffix("KEY/keyid/issuer/v=1");
+    return Name(name).append(suffix);
+  }
+
+  template<typename PktType, typename C>
+  static void
+  testChecker(C& checker, tlv::SignatureTypeValue sigType, const Name& pktName, const Name& klName, bool expectedOutcome)
+  {
+    BOOST_TEST_CONTEXT("pkt=" << pktName << " kl=" << klName) {
+      auto state = PktType::makeState();
+      auto result = checker.check(PktType::getType(), sigType, pktName, klName, *state);
+      BOOST_CHECK_EQUAL(bool(result), expectedOutcome);
+      BOOST_CHECK(boost::logic::indeterminate(state->getOutcome()));
+      if (!result) {
+        BOOST_CHECK_NE(result.getErrorMessage(), "");
+      }
+    }
   }
 
 public:
   std::vector<Name> names;
 };
 
-BOOST_FIXTURE_TEST_SUITE(TestChecker, CheckerFixture)
-
 class NameRelationEqual : public CheckerFixture
 {
 public:
-  NameRelationEqual()
-    : checker("/foo/bar", NameRelation::EQUAL)
-  {
-  }
-
-public:
-  NameRelationChecker checker;
+  NameRelationChecker checker{tlv::SignatureSha256WithRsa, "/foo/bar", NameRelation::EQUAL};
   std::vector<std::vector<bool>> outcomes = {{true, false, false, false},
                                              {true, false, false, false},
                                              {true, false, false, false},
@@ -81,13 +97,7 @@ public:
 class NameRelationIsPrefixOf : public CheckerFixture
 {
 public:
-  NameRelationIsPrefixOf()
-    : checker("/foo/bar", NameRelation::IS_PREFIX_OF)
-  {
-  }
-
-public:
-  NameRelationChecker checker;
+  NameRelationChecker checker{tlv::SignatureSha256WithRsa, "/foo/bar", NameRelation::IS_PREFIX_OF};
   std::vector<std::vector<bool>> outcomes = {{true, true, false, false},
                                              {true, true, false, false},
                                              {true, true, false, false},
@@ -97,13 +107,7 @@ public:
 class NameRelationIsStrictPrefixOf : public CheckerFixture
 {
 public:
-  NameRelationIsStrictPrefixOf()
-    : checker("/foo/bar", NameRelation::IS_STRICT_PREFIX_OF)
-  {
-  }
-
-public:
-  NameRelationChecker checker;
+  NameRelationChecker checker{tlv::SignatureSha256WithRsa, "/foo/bar", NameRelation::IS_STRICT_PREFIX_OF};
   std::vector<std::vector<bool>> outcomes = {{false, true, false, false},
                                              {false, true, false, false},
                                              {false, true, false, false},
@@ -113,13 +117,7 @@ public:
 class RegexEqual : public CheckerFixture
 {
 public:
-  RegexEqual()
-    : checker(Regex("^<foo><bar><KEY><>$"))
-  {
-  }
-
-public:
-  RegexChecker checker;
+  RegexChecker checker{tlv::SignatureSha256WithRsa, Regex("^<foo><bar><KEY><>{1,3}$")};
   std::vector<std::vector<bool>> outcomes = {{true, false, false, false},
                                              {true, false, false, false},
                                              {true, false, false, false},
@@ -129,13 +127,7 @@ public:
 class RegexIsPrefixOf : public CheckerFixture
 {
 public:
-  RegexIsPrefixOf()
-    : checker(Regex("^<foo><bar><>*<KEY><>$"))
-  {
-  }
-
-public:
-  RegexChecker checker;
+  RegexChecker checker{tlv::SignatureSha256WithRsa, Regex("^<foo><bar><>*<KEY><>{1,3}$")};
   std::vector<std::vector<bool>> outcomes = {{true, true, false, false},
                                              {true, true, false, false},
                                              {true, true, false, false},
@@ -145,13 +137,7 @@ public:
 class RegexIsStrictPrefixOf : public CheckerFixture
 {
 public:
-  RegexIsStrictPrefixOf()
-    : checker(Regex("^<foo><bar><>+<KEY><>$"))
-  {
-  }
-
-public:
-  RegexChecker checker;
+  RegexChecker checker{tlv::SignatureSha256WithRsa, Regex("^<foo><bar><>+<KEY><>{1,3}$")};
   std::vector<std::vector<bool>> outcomes = {{false, true, false, false},
                                              {false, true, false, false},
                                              {false, true, false, false},
@@ -161,13 +147,8 @@ public:
 class HyperRelationEqual : public CheckerFixture
 {
 public:
-  HyperRelationEqual()
-    : checker("^(<>+)$", "\\1", "^(<>+)<KEY><>$", "\\1", NameRelation::EQUAL)
-  {
-  }
-
-public:
-  HyperRelationChecker checker;
+  HyperRelationChecker checker{tlv::SignatureSha256WithRsa,
+                               "^(<>+)$", "\\1", "^(<>+)<KEY><>{1,3}$", "\\1", NameRelation::EQUAL};
   std::vector<std::vector<bool>> outcomes = {{true,  false, false, false},
                                              {false, true,  false, false},
                                              {false, false, true,  false},
@@ -177,13 +158,8 @@ public:
 class HyperRelationIsPrefixOf : public CheckerFixture
 {
 public:
-  HyperRelationIsPrefixOf()
-    : checker("^(<>+)$", "\\1", "^(<>+)<KEY><>$", "\\1", NameRelation::IS_PREFIX_OF)
-  {
-  }
-
-public:
-  HyperRelationChecker checker;
+  HyperRelationChecker checker{tlv::SignatureSha256WithRsa,
+                               "^(<>+)$", "\\1", "^(<>+)<KEY><>{1,3}$", "\\1", NameRelation::IS_PREFIX_OF};
   std::vector<std::vector<bool>> outcomes = {{true,  false, true,  false},
                                              {true,  true,  true,  false},
                                              {false, false, true,  false},
@@ -193,13 +169,8 @@ public:
 class HyperRelationIsStrictPrefixOf : public CheckerFixture
 {
 public:
-  HyperRelationIsStrictPrefixOf()
-    : checker("^(<>+)$", "\\1", "^(<>+)<KEY><>$", "\\1", NameRelation::IS_STRICT_PREFIX_OF)
-  {
-  }
-
-public:
-  HyperRelationChecker checker;
+  HyperRelationChecker checker{tlv::SignatureSha256WithRsa,
+                               "^(<>+)$", "\\1", "^(<>+)<KEY><>{1,3}$", "\\1", NameRelation::IS_STRICT_PREFIX_OF};
   std::vector<std::vector<bool>> outcomes = {{false, false, true,  false},
                                              {true,  false, true,  false},
                                              {false, false, false, false},
@@ -266,7 +237,7 @@ public:
           key-locator
           {
             type name
-            regex ^<foo><bar><KEY><>$
+            regex ^<foo><bar><KEY><>{1,3}$
           }
         )CONF"), "test-config"))
     , checker(*checkerPtr)
@@ -295,7 +266,7 @@ public:
             type name
             hyper-relation
             {
-              k-regex ^(<>+)<KEY><>$
+              k-regex ^(<>+)<KEY><>{1,3}$
               k-expand \\1
               h-relation is-prefix-of
               p-regex ^(<>+)$
@@ -317,71 +288,53 @@ public:
                                              {false, false, false, true}};
 };
 
-using Tests = boost::mpl::vector<NameRelationEqual, NameRelationIsPrefixOf, NameRelationIsStrictPrefixOf,
-                                 RegexEqual, RegexIsPrefixOf, RegexIsStrictPrefixOf,
-                                 HyperRelationEqual, HyperRelationIsPrefixOf, HyperRelationIsStrictPrefixOf,
-                                 Hierarchical,
-                                 CustomizedNameRelation, CustomizedRegex, CustomizedHyperRelation>;
+using CheckerFixtures = boost::mpl::vector<
+  NameRelationEqual,
+  NameRelationIsPrefixOf,
+  NameRelationIsStrictPrefixOf,
+  RegexEqual,
+  RegexIsPrefixOf,
+  RegexIsStrictPrefixOf,
+  HyperRelationEqual,
+  HyperRelationIsPrefixOf,
+  HyperRelationIsStrictPrefixOf,
+  Hierarchical,
+  CustomizedNameRelation,
+  CustomizedRegex,
+  CustomizedHyperRelation
+>;
 
-BOOST_FIXTURE_TEST_CASE_TEMPLATE(DataChecks, T, Tests, T)
+// Cartesian product of [DataPkt, InterestV02Pkt, InterestV03Pkt] and CheckerFixtures.
+// Each element is a boost::mpl::pair<PktType, CheckerFixture>.
+using Tests = boost::mpl::fold<
+  CheckerFixtures,
+  boost::mpl::vector<>,
+  boost::mpl::push_back<boost::mpl::push_back<boost::mpl::push_back<boost::mpl::_1,
+    boost::mpl::pair<DataPkt, boost::mpl::_2>>,
+    boost::mpl::pair<InterestV02Pkt, boost::mpl::_2>>,
+    boost::mpl::pair<InterestV03Pkt, boost::mpl::_2>>
+>::type;
+
+BOOST_FIXTURE_TEST_CASE_TEMPLATE(Checks, T, Tests, T::second)
 {
-  using namespace ndn::security::v2::tests;
-  using PktType = DataPkt;
+  using PktType = typename T::first;
 
   BOOST_REQUIRE_EQUAL(this->outcomes.size(), this->names.size());
   for (size_t i = 0; i < this->names.size(); ++i) {
     BOOST_REQUIRE_EQUAL(this->outcomes[i].size(), this->names.size());
+
+    auto pktName = PktType::makeName(this->names[i], this->m_keyChain);
     for (size_t j = 0; j < this->names.size(); ++j) {
-      auto pktName = PktType::makeName(this->names[i], this->m_keyChain);
-      auto klName = this->makeKeyLocatorName(this->names[j]);
       bool expectedOutcome = this->outcomes[i][j];
 
-      auto state = PktType::makeState();
-      BOOST_CHECK_EQUAL(this->checker.check(PktType::getType(), pktName, klName, state), expectedOutcome);
-      BOOST_CHECK_EQUAL(boost::logic::indeterminate(state->getOutcome()), expectedOutcome);
-      BOOST_CHECK_EQUAL(bool(state->getOutcome()), false);
-    }
-  }
-}
+      auto klName = this->makeKeyLocatorKeyName(this->names[j]);
+      this->template testChecker<PktType>(this->checker, tlv::SignatureSha256WithRsa, pktName, klName, expectedOutcome);
+      this->template testChecker<PktType>(this->checker, tlv::SignatureSha256WithEcdsa, pktName, klName, false);
 
-BOOST_FIXTURE_TEST_CASE_TEMPLATE(InterestV02Checks, T, Tests, T)
-{
-  using namespace ndn::security::v2::tests;
-  using PktType = InterestV02Pkt;
 
-  BOOST_REQUIRE_EQUAL(this->outcomes.size(), this->names.size());
-  for (size_t i = 0; i < this->names.size(); ++i) {
-    BOOST_REQUIRE_EQUAL(this->outcomes[i].size(), this->names.size());
-    for (size_t j = 0; j < this->names.size(); ++j) {
-      auto pktName = PktType::makeName(this->names[i], this->m_keyChain);
-      auto klName = this->makeKeyLocatorName(this->names[j]);
-      bool expectedOutcome = this->outcomes[i][j];
-
-      auto state = PktType::makeState();
-      BOOST_CHECK_EQUAL(this->checker.check(PktType::getType(), pktName, klName, state), expectedOutcome);
-      BOOST_CHECK_EQUAL(boost::logic::indeterminate(state->getOutcome()), expectedOutcome);
-      BOOST_CHECK_EQUAL(bool(state->getOutcome()), false);
-    }
-  }
-}
-
-BOOST_FIXTURE_TEST_CASE_TEMPLATE(InterestV03Checks, T, Tests, T)
-{
-  using namespace ndn::security::v2::tests;
-  using PktType = InterestV03Pkt;
-
-  BOOST_REQUIRE_EQUAL(this->outcomes.size(), this->names.size());
-  for (size_t i = 0; i < this->names.size(); ++i) {
-    BOOST_REQUIRE_EQUAL(this->outcomes[i].size(), this->names.size());
-    for (size_t j = 0; j < this->names.size(); ++j) {
-      auto pktName = PktType::makeName(this->names[i], this->m_keyChain);
-      auto klName = this->makeKeyLocatorName(this->names[j]);
-      bool expectedOutcome = this->outcomes[i][j];
-
-      auto state = PktType::makeState();
-      BOOST_CHECK_EQUAL(this->checker.check(PktType::getType(), pktName, klName, state), expectedOutcome);
-      BOOST_CHECK_EQUAL(boost::logic::indeterminate(state->getOutcome()), expectedOutcome);
-      BOOST_CHECK_EQUAL(bool(state->getOutcome()), false);
+      klName = this->makeKeyLocatorCertName(this->names[j]);
+      this->template testChecker<PktType>(this->checker, tlv::SignatureSha256WithRsa, pktName, klName, expectedOutcome);
+      this->template testChecker<PktType>(this->checker, tlv::SignatureSha256WithEcdsa, pktName, klName, false);
     }
   }
 }

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -17,11 +17,10 @@
  * <http://www.gnu.org/licenses/>.
  *
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
- *
- * @author Alexander Afanasyev <http://lasr.cs.ucla.edu/afanasyev/index.html>
  */
 
 #include <ndn-cxx/face.hpp>
+#include <ndn-cxx/security/validator-config.hpp>
 
 #include <iostream>
 
@@ -33,6 +32,11 @@ namespace examples {
 class Consumer
 {
 public:
+  Consumer()
+  {
+    m_validator.load("trust-schema.conf");
+  }
+
   void
   run()
   {
@@ -40,15 +44,14 @@ public:
     interestName.appendVersion();
 
     Interest interest(interestName);
-    interest.setCanBePrefix(false);
     interest.setMustBeFresh(true);
     interest.setInterestLifetime(6_s); // The default is 4 seconds
 
     std::cout << "Sending Interest " << interest << std::endl;
     m_face.expressInterest(interest,
-                           bind(&Consumer::onData, this,  _1, _2),
-                           bind(&Consumer::onNack, this, _1, _2),
-                           bind(&Consumer::onTimeout, this, _1));
+                           std::bind(&Consumer::onData, this,  _1, _2),
+                           std::bind(&Consumer::onNack, this, _1, _2),
+                           std::bind(&Consumer::onTimeout, this, _1));
 
     // processEvents will block until the requested data is received or a timeout occurs
     m_face.processEvents();
@@ -56,9 +59,17 @@ public:
 
 private:
   void
-  onData(const Interest&, const Data& data) const
+  onData(const Interest&, const Data& data)
   {
     std::cout << "Received Data " << data << std::endl;
+
+    m_validator.validate(data,
+                         [] (const Data&) {
+                           std::cout << "Data conforms to trust schema" << std::endl;
+                         },
+                         [] (const Data&, const security::ValidationError& error) {
+                           std::cout << "Error authenticating data: " << error << std::endl;
+                         });
   }
 
   void
@@ -75,6 +86,7 @@ private:
 
 private:
   Face m_face;
+  ValidatorConfig m_validator{m_face};
 };
 
 } // namespace examples

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2016-2020, Regents of the University of California,
+ * Copyright (c) 2016-2022, Regents of the University of California,
  *                          Colorado State University,
  *                          University Pierre & Marie Curie, Sorbonne University.
  *
@@ -34,8 +34,9 @@
 #include <ndn-cxx/security/validation-error.hpp>
 #include <ndn-cxx/security/validator.hpp>
 
-namespace ndn {
-namespace chunks {
+#include <map>
+
+namespace ndn::chunks {
 
 /**
  * @brief Segmented version consumer
@@ -92,13 +93,12 @@ private:
   std::ostream& m_outputStream;
   unique_ptr<DiscoverVersion> m_discover;
   unique_ptr<PipelineInterests> m_pipeline;
-  uint64_t m_nextToPrint;
+  uint64_t m_nextToPrint = 0;
 
 PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   std::map<uint64_t, shared_ptr<const Data>> m_bufferedData;
 };
 
-} // namespace chunks
-} // namespace ndn
+} // namespace ndn::chunks
 
 #endif // NDN_TOOLS_CHUNKS_CATCHUNKS_CONSUMER_HPP

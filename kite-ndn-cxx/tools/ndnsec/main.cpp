@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,9 +22,11 @@
 #include "ndnsec.hpp"
 
 #include "ndn-cxx/util/logger.hpp"
+#include "ndn-cxx/util/logging.hpp"
 #include "ndn-cxx/version.hpp"
 
 #include <boost/exception/diagnostic_information.hpp>
+#include <boost/filesystem/path.hpp>
 #include <iostream>
 
 NDN_LOG_INIT(ndnsec);
@@ -49,32 +51,57 @@ Available commands:
 
 Try 'ndnsec COMMAND --help' for more information on each command.)STR";
 
+const std::map<std::string, std::string> deprecatedCommands{
+  {"certgen",           "cert-gen"},
+  {"dump-certificate",  "cert-dump"},
+  {"install-cert",      "cert-install"},
+  {"keygen",            "key-gen"},
+  {"ls-identity",       "list"},
+};
+
 int
 main(int argc, char* argv[])
 {
-  if (argc < 2) {
+  boost::filesystem::path p(argv[0]);
+  std::string basename(p.filename().string());
+  std::string command;
+  if (basename.rfind("ndnsec-", 0) == 0) {
+    command = basename.substr(std::strlen("ndnsec-"));
+    auto it = deprecatedCommands.find(command);
+    if (it != deprecatedCommands.end()) {
+      std::cerr << "DEPRECATION NOTICE: ndnsec-" << it->first << " is deprecated. "
+                << "Please use 'ndnsec " << it->second << "' instead.\n";
+      command = it->second;
+    }
+  }
+  else if (argc >= 2) {
+    command = argv[1];
+    argc--;
+    argv++;
+  }
+  else {
     std::cerr << NDNSEC_HELP_TEXT << std::endl;
     return 2;
   }
 
-  using namespace ndn::ndnsec;
+  NDN_LOG_TRACE("Command: " << command);
 
-  std::string command(argv[1]);
   try {
+    using namespace ndn::ndnsec;
     if (command == "help")              { std::cout << NDNSEC_HELP_TEXT << std::endl; }
     else if (command == "version")      { std::cout << NDN_CXX_VERSION_BUILD_STRING << std::endl; }
-    else if (command == "list")         { return ndnsec_list(argc - 1, argv + 1); }
-    else if (command == "get-default")  { return ndnsec_get_default(argc - 1, argv + 1); }
-    else if (command == "set-default")  { return ndnsec_set_default(argc - 1, argv + 1); }
-    else if (command == "delete")       { return ndnsec_delete(argc - 1, argv + 1); }
-    else if (command == "key-gen")      { return ndnsec_key_gen(argc - 1, argv + 1); }
-    else if (command == "sign-req")     { return ndnsec_sign_req(argc - 1, argv + 1); }
-    else if (command == "cert-gen")     { return ndnsec_cert_gen(argc - 1, argv + 1); }
-    else if (command == "cert-dump")    { return ndnsec_cert_dump(argc - 1, argv + 1); }
-    else if (command == "cert-install") { return ndnsec_cert_install(argc - 1, argv + 1); }
-    else if (command == "export")       { return ndnsec_export(argc - 1, argv + 1); }
-    else if (command == "import")       { return ndnsec_import(argc - 1, argv + 1); }
-    else if (command == "unlock-tpm")   { return ndnsec_unlock_tpm(argc - 1, argv + 1); }
+    else if (command == "list")         { return ndnsec_list(argc, argv); }
+    else if (command == "get-default")  { return ndnsec_get_default(argc, argv); }
+    else if (command == "set-default")  { return ndnsec_set_default(argc, argv); }
+    else if (command == "delete")       { return ndnsec_delete(argc, argv); }
+    else if (command == "key-gen")      { return ndnsec_key_gen(argc, argv); }
+    else if (command == "sign-req")     { return ndnsec_sign_req(argc, argv); }
+    else if (command == "cert-gen")     { return ndnsec_cert_gen(argc, argv); }
+    else if (command == "cert-dump")    { return ndnsec_cert_dump(argc, argv); }
+    else if (command == "cert-install") { return ndnsec_cert_install(argc, argv); }
+    else if (command == "export")       { return ndnsec_export(argc, argv); }
+    else if (command == "import")       { return ndnsec_import(argc, argv); }
+    else if (command == "unlock-tpm")   { return ndnsec_unlock_tpm(argc, argv); }
     else {
       std::cerr << "ERROR: Unknown command '" << command << "'\n"
                 << "\n"
@@ -85,6 +112,7 @@ main(int argc, char* argv[])
   catch (const std::exception& e) {
     std::cerr << "ERROR: " << e.what() << std::endl;
     NDN_LOG_ERROR(boost::diagnostic_information(e));
+    ndn::util::Logging::flush();
     return 1;
   }
 

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_VALIDATOR_CONFIG_RULE_HPP
-#define NDN_SECURITY_VALIDATOR_CONFIG_RULE_HPP
+#ifndef NDN_CXX_SECURITY_VALIDATOR_CONFIG_RULE_HPP
+#define NDN_CXX_SECURITY_VALIDATOR_CONFIG_RULE_HPP
 
 #include "ndn-cxx/security/validator-config/checker.hpp"
 #include "ndn-cxx/security/validator-config/filter.hpp"
@@ -73,20 +73,23 @@ public:
   match(uint32_t pktType, const Name& pktName, const shared_ptr<ValidationState>& state) const;
 
   /**
-   * @brief check if packet satisfies rule's condition
+   * @brief Check if packet satisfies rule's condition.
    *
    * @param pktType tlv::Interest or tlv::Data
+   * @param sigType Signature type
    * @param pktName packet name, for signed Interests the last two components are not removed
    * @param klName KeyLocator name
    * @param state Validation state
    *
-   * @retval false packet violates at least one checker. Will call state::fail() with proper code and message.
-   * @retval true  packet satisfies all checkers, further validation is needed
+   * @retval false packet violates all checkers. `fail()` will have been called on @p state with
+   *               proper code and message.
+   * @retval true  packet satisfies at least one checker, further validation is needed.
    *
-   * @throw Error the supplied pktType doesn't match one for which the rule is designed
+   * @throw Error the supplied pktType doesn't match one for which the rule is designed.
    */
   bool
-  check(uint32_t pktType, const Name& pktName, const Name& klName, const shared_ptr<ValidationState>& state) const;
+  check(uint32_t pktType, tlv::SignatureTypeValue sigType, const Name& pktName, const Name& klName,
+        const shared_ptr<ValidationState>& state) const;
 
 public:
   /**
@@ -111,4 +114,4 @@ NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_VALIDATOR_CONFIG_RULE_HPP
+#endif // NDN_CXX_SECURITY_VALIDATOR_CONFIG_RULE_HPP

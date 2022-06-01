@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -21,8 +21,6 @@
 
 #include "ndnsec.hpp"
 #include "util.hpp"
-
-#include "ndn-cxx/util/io.hpp"
 
 #include <boost/asio/ip/tcp.hpp>
 #if BOOST_VERSION < 106700
@@ -107,18 +105,12 @@ ndnsec_cert_dump(int argc, char** argv)
     return 2;
   }
 
-  security::v2::Certificate certificate;
+  security::Certificate certificate;
   if (isFileName) {
-    try {
-      certificate = loadCertificate(name);
-    }
-    catch (const CannotLoadCertificate&) {
-      std::cerr << "ERROR: Cannot load the certificate from `" << name << "`" << std::endl;
-      return 1;
-    }
+    certificate = loadFromFile<security::Certificate>(name);
   }
   else {
-    security::v2::KeyChain keyChain;
+    KeyChain keyChain;
     certificate = getCertificateFromPib(keyChain.getPib(), name,
                                         isIdentityName, isKeyName, nIsNameOptions == 0);
   }
@@ -140,7 +132,7 @@ ndnsec_cert_dump(int argc, char** argv)
       std::cerr << "ERROR: Failed to connect to repo instance" << std::endl;
       return 1;
     }
-    requestStream.write(reinterpret_cast<const char*>(certificate.wireEncode().wire()),
+    requestStream.write(reinterpret_cast<const char*>(certificate.wireEncode().data()),
                         certificate.wireEncode().size());
     return 0;
   }

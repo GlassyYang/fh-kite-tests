@@ -2,13 +2,11 @@
 
 source ./test_common.sh
 
-# set -x
-
 NFD1_INIT="nfdc route add /kite-test/rv tcp://${NFD2_ADDR}:6363"
 NFD2_INIT="NDN_LOG=kite.*=ALL kiterv /kite-test/rv -m /kite-test/alice -l >nfd2.log 2>&1"
 NFD3_INIT="nfdc route add /kite-test/rv tcp://${NFD2_ADDR}:6363"
 
-NFD1_TEST="ndnpeek $TEST_FILE$ -v -w 2000 -r /kite-test/rv"
+NFD1_TEST="ndnpeek $TEST_FILE$ -v -w 4000 -r /kite-test/rv"
 NFD3_TEST="NDN_LOG=kite.*=ALL kiteproducer -r /kite-test/rv -p /kite-test/alice -l 1000000 -a 1 >nfd3.log 2>&1"
 
 NFD1_CLEAR="
@@ -37,6 +35,7 @@ init() {
 test() {
     execute NFD3 "${NFD3_TEST}" &
     execute NFD3 "${SEND_PRODUCER_SIGNAL}"
+    sleep 2
     execute NFD1 "${NFD1_TEST}"
     sleep 2
     rvout=`execute NFD2 "cat nfd2.log"`

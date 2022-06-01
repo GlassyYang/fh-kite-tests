@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,8 +22,8 @@
  * @author Yingdi Yu <http://irl.cs.ucla.edu/~yingdi/>
  */
 
-#ifndef NDN_SECURITY_CERTIFICATE_HPP
-#define NDN_SECURITY_CERTIFICATE_HPP
+#ifndef NDN_CXX_SECURITY_CERTIFICATE_HPP
+#define NDN_CXX_SECURITY_CERTIFICATE_HPP
 
 #include "ndn-cxx/data.hpp"
 
@@ -32,51 +32,30 @@ namespace security {
 inline namespace v2 {
 
 /**
- * @brief The certificate following the certificate format naming convention
+ * @brief Represents an NDN certificate following the version 2.0 format.
  *
- * Overview of NDN certificate format:
- *
- *     CertificateV2 ::= DATA-TLV TLV-LENGTH
- *                         Name      (= /<NameSpace>/KEY/[KeyId]/[IssuerId]/[Version])
- *                         MetaInfo  (.ContentType = KEY)
- *                         Content   (= X509PublicKeyContent)
- *                         SignatureInfo (= CertificateV2SignatureInfo)
- *                         SignatureValue
- *
- *     X509PublicKeyContent ::= CONTENT-TLV TLV-LENGTH
- *                                BYTE+ (= public key bits in PKCS#8 format)
- *
- *     CertificateV2SignatureInfo ::= SIGNATURE-INFO-TYPE TLV-LENGTH
- *                                      SignatureType
- *                                      KeyLocator
- *                                      ValidityPeriod
- *                                      ... optional critical or non-critical extension blocks ...
- *
- * An example of NDN certificate name:
- *
- *     /edu/ucla/cs/yingdi/KEY/%03%CD...%F1/%9F%D3...%B7/%FD%d2...%8E
- *     \_________________/    \___________/ \___________/\___________/
- *    Certificate Namespace      Key Id       Issuer Id     Version
- *         (Identity)
+ * Example of an NDN certificate name:
+ * @code{.unparsed}
+ *     /edu/ucla/cs/yingdi/KEY/%03%CD...%F1/%9F%D3...%B7/v=1617592200702
+ *     \_________________/    \___________/\___________/\______________/
+ *        Identity Name           KeyId      IssuerId       Version
  *     \__________________________________/
  *                   Key Name
+ * @endcode
  *
  * Notes:
- *
- * - `Key Id` is opaque name component to identify an instance of the public key for the
- *   certificate namespace.  The value of `Key ID` is controlled by the namespace owner.  The
+ * - `KeyId` is an opaque name component to identify an instance of the public key for the
+ *   certificate namespace.  The value of KeyId is controlled by the namespace owner.  The
  *   library includes helpers for generation of key IDs using 8-byte random number, SHA-256
- *   digest of the public key, timestamp, and the specified numerical identifiers.
+ *   digest of the public key, timestamp, or a specified numerical identifier.
+ * - `IssuerId` is an opaque name component to identify the issuer of the certificate.  The
+ *   value is controlled by the issuer.  The library includes helpers to set issuer ID to a
+ *   8-byte random number, SHA-256 digest of the issuer's public key, or a specified numerical
+ *   identifier.
+ * - `Key %Name` is a logical name of the key used for management purposes.  The key name
+ *   includes the identity name, the keyword `KEY`, and the `KeyId` component.
  *
- * - `Issuer Id` is opaque name component to identify issuer of the certificate.  The value is
- *   controlled by the issuer.  The library includes helpers to set issuer ID to a 8-byte
- *   random number, SHA-256 digest of the issuer's public key, and the specified numerical
- *   identifiers.
- *
- * - `Key Name` is a logical name of the key used for management pursposes. Key Name includes
- *   the certificate namespace, keyword `KEY`, and `KeyId` components.
- *
- * @see doc/specs/certificate-format.rst
+ * @see doc/specs/certificate.rst
  */
 class Certificate : public Data
 {
@@ -170,6 +149,7 @@ public:
   static const size_t MIN_CERT_NAME_LENGTH;
   static const size_t MIN_KEY_NAME_LENGTH;
   static const name::Component KEY_COMPONENT;
+  static const name::Component DEFAULT_ISSUER_ID;
 };
 
 std::ostream&
@@ -191,4 +171,4 @@ extractKeyNameFromCertName(const Name& certName);
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_CERTIFICATE_HPP
+#endif // NDN_CXX_SECURITY_CERTIFICATE_HPP

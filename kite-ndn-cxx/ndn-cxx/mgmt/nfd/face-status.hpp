@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,10 +19,11 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_MGMT_NFD_FACE_STATUS_HPP
-#define NDN_MGMT_NFD_FACE_STATUS_HPP
+#ifndef NDN_CXX_MGMT_NFD_FACE_STATUS_HPP
+#define NDN_CXX_MGMT_NFD_FACE_STATUS_HPP
 
 #include "ndn-cxx/mgmt/nfd/face-traits.hpp"
+#include "ndn-cxx/util/optional.hpp"
 #include "ndn-cxx/util/time.hpp"
 
 namespace ndn {
@@ -250,4 +251,4 @@ operator<<(std::ostream& os, const FaceStatus& status);
 } // namespace nfd
 } // namespace ndn
 
-#endif // NDN_MGMT_NFD_FACE_STATUS_HPP
+#endif // NDN_CXX_MGMT_NFD_FACE_STATUS_HPP

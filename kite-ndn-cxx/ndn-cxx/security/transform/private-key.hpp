@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -52,7 +52,7 @@ public:
    * e.g., by prompting for it twice. The callback must return the number of characters
    * in the password or 0 if an error occurred.
    */
-  typedef function<int(char* buf, size_t bufSize, bool shouldConfirm)> PasswordCallback;
+  using PasswordCallback = std::function<int(char* buf, size_t bufSize, bool shouldConfirm)>;
 
 public:
   /**
@@ -90,13 +90,13 @@ public:
    * @note Currently supports only HMAC keys.
    */
   void
-  loadRaw(KeyType type, const uint8_t* buf, size_t size);
+  loadRaw(KeyType type, span<const uint8_t> buf);
 
   /**
    * @brief Load the private key in PKCS#1 format from a buffer @p buf
    */
   void
-  loadPkcs1(const uint8_t* buf, size_t size);
+  loadPkcs1(span<const uint8_t> buf);
 
   /**
    * @brief Load the private key in PKCS#1 format from a stream @p is
@@ -108,7 +108,7 @@ public:
    * @brief Load the private key in base64-encoded PKCS#1 format from a buffer @p buf
    */
   void
-  loadPkcs1Base64(const uint8_t* buf, size_t size);
+  loadPkcs1Base64(span<const uint8_t> buf);
 
   /**
    * @brief Load the private key in base64-encoded PKCS#1 format from a stream @p is
@@ -121,7 +121,7 @@ public:
    * @pre strlen(pw) == pwLen
    */
   void
-  loadPkcs8(const uint8_t* buf, size_t size, const char* pw, size_t pwLen);
+  loadPkcs8(span<const uint8_t> buf, const char* pw, size_t pwLen);
 
   /**
    * @brief Load the private key in encrypted PKCS#8 format from a buffer @p buf with
@@ -130,7 +130,7 @@ public:
    * The default password callback is provided by OpenSSL
    */
   void
-  loadPkcs8(const uint8_t* buf, size_t size, PasswordCallback pwCallback = nullptr);
+  loadPkcs8(span<const uint8_t> buf, PasswordCallback pwCallback = nullptr);
 
   /**
    * @brief Load the private key in encrypted PKCS#8 format from a stream @p is with passphrase @p pw
@@ -154,7 +154,7 @@ public:
    * @pre strlen(pw) == pwLen
    */
   void
-  loadPkcs8Base64(const uint8_t* buf, size_t size, const char* pw, size_t pwLen);
+  loadPkcs8Base64(span<const uint8_t> buf, const char* pw, size_t pwLen);
 
   /**
    * @brief Load the private key in encrypted PKCS#8 format from a buffer @p buf with
@@ -163,7 +163,7 @@ public:
    * The default password callback is provided by OpenSSL
    */
   void
-  loadPkcs8Base64(const uint8_t* buf, size_t size, PasswordCallback pwCallback = nullptr);
+  loadPkcs8Base64(span<const uint8_t> buf, PasswordCallback pwCallback = nullptr);
 
   /**
    * @brief Load the private key in base64-encoded encrypted PKCS#8 format from a stream @p is
@@ -236,7 +236,7 @@ public:
    * Only RSA encryption is supported for now.
    */
   ConstBufferPtr
-  decrypt(const uint8_t* cipherText, size_t cipherLen) const;
+  decrypt(span<const uint8_t> cipherText) const;
 
 private:
   friend class SignerFilter;
@@ -250,7 +250,6 @@ private:
   void*
   getEvpPkey() const;
 
-private:
   ConstBufferPtr
   toPkcs1() const;
 
@@ -261,7 +260,7 @@ private:
   toPkcs8(PasswordCallback pwCallback = nullptr) const;
 
   ConstBufferPtr
-  rsaDecrypt(const uint8_t* cipherText, size_t cipherLen) const;
+  rsaDecrypt(span<const uint8_t> cipherText) const;
 
 private:
   friend unique_ptr<PrivateKey> generatePrivateKey(const KeyParams&);

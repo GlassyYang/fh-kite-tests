@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019 Regents of the University of California,
+ * Copyright (c) 2014-2022 Regents of the University of California,
  *                         Arizona Board of Regents,
  *                         Colorado State University,
  *                         University Pierre & Marie Curie, Sorbonne University,
@@ -25,10 +25,10 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_TESTS_UNIT_UTIL_SIMPLE_NOTIFICATION_HPP
-#define NDN_TESTS_UNIT_UTIL_SIMPLE_NOTIFICATION_HPP
+#ifndef NDN_CXX_TESTS_UNIT_UTIL_SIMPLE_NOTIFICATION_HPP
+#define NDN_CXX_TESTS_UNIT_UTIL_SIMPLE_NOTIFICATION_HPP
 
-#include "ndn-cxx/encoding/encoding-buffer.hpp"
+#include "ndn-cxx/encoding/block-helpers.hpp"
 
 namespace ndn {
 namespace util {
@@ -53,18 +53,13 @@ public:
   Block
   wireEncode() const
   {
-    ndn::EncodingBuffer buffer;
-    buffer.prependByteArrayBlock(0x8888,
-                                 reinterpret_cast<const uint8_t*>(m_message.c_str()),
-                                 m_message.size());
-    return buffer.block();
+    return makeStringBlock(0x8888, m_message);
   }
 
   void
   wireDecode(const Block& block)
   {
-    m_message.assign(reinterpret_cast<const char*>(block.value()),
-                     block.value_size());
+    m_message = readString(block);
 
     // error for testing
     if (!m_message.empty() && m_message[0] == '\x07')
@@ -91,4 +86,4 @@ private:
 } // namespace util
 } // namespace ndn
 
-#endif // NDN_TESTS_UNIT_UTIL_SIMPLE_NOTIFICATION_HPP
+#endif // NDN_CXX_TESTS_UNIT_UTIL_SIMPLE_NOTIFICATION_HPP

@@ -37,6 +37,7 @@ ENDSCRIPT
 vagrant package
 vagrant box add package.box --name glassyyang/kite-test-env
 ```
+
 ### Run tests
 Go into `tests` folder and run `test.sh` to run all tests. Also can run `test_*.sh` except `test_common.dh` manually to
 run single test.
@@ -101,4 +102,4 @@ MP --- RV
 RV --- ndnpeek
 ```
 
-In this test, `MP` will send a `NACK` when it receives an `interest`.  when `ndnpeek` send an `interest`, it will be sent to `MP` firstly. at the view of NFD which `RV` runs, it will receive a `NACK`. `KiteStrategy` in this NFD will try to find a feasible route forwarding `interest`, where `RV` located will be considered to be next trying.
+In this test, `MP` will send a `NACK` when it receives an `interest`.  when `ndnpeek` send an `interest`, it will be sent to `MP` firstly. at the view of NFD which `RV` runs, it will receive a `NACK`. `KiteStrategy` in this NFD will try to find a feasible route forwarding `interest`, where `RV` located will be considered to be the next trying.

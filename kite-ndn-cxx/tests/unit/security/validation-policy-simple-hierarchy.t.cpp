@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,7 +20,6 @@
  */
 
 #include "ndn-cxx/security/validation-policy-simple-hierarchy.hpp"
-#include "ndn-cxx/util/scope.hpp"
 
 #include "tests/boost-test.hpp"
 #include "tests/unit/security/validator-fixture.hpp"
@@ -32,43 +31,40 @@ namespace security {
 inline namespace v2 {
 namespace tests {
 
-using namespace ndn::tests;
-
 BOOST_AUTO_TEST_SUITE(Security)
 BOOST_FIXTURE_TEST_SUITE(TestValidationPolicySimpleHierarchy,
                          HierarchicalValidatorFixture<ValidationPolicySimpleHierarchy>)
 
-using Packets = boost::mpl::vector<Interest, Data>;
+using Packets = boost::mpl::vector<InterestV03Pkt, DataPkt>;
 
 BOOST_AUTO_TEST_CASE_TEMPLATE(Validate, Packet, Packets)
 {
-  // Can't set CanBePrefix on Interests in this test case because of template
-  // TODO: Remove in #4582
-  auto guard = make_scope_exit([] { Interest::s_errorIfCanBePrefixUnset = true; });
-  Interest::s_errorIfCanBePrefixUnset = false;
+  const Name name = "/Security/ValidatorFixture/Sub1/Sub2/Packet";
 
-  Packet unsignedPacket("/Security/ValidatorFixture/Sub1/Sub2/Packet");
-
-  Packet packet = unsignedPacket;
+  auto packet = Packet::makePacket(name);
   VALIDATE_FAILURE(packet, "Unsigned");
 
-  packet = unsignedPacket;
+  packet = Packet::makePacket(name);
   m_keyChain.sign(packet, signingWithSha256());
-  VALIDATE_FAILURE(packet, "Policy doesn't accept Sha256Digest signature");
+  VALIDATE_FAILURE(packet, "Should not be accepted, name not prefix of /localhost/identity/digest-sha256");
 
-  packet = unsignedPacket;
+  packet = Packet::makePacket("/localhost/identity/digest-sha256/foobar");
+  m_keyChain.sign(packet, signingWithSha256());
+  VALIDATE_SUCCESS(packet, "Should be accepted, as name is prefix of /localhost/identity/digest-sha256");
+
+  packet = Packet::makePacket(name);
   m_keyChain.sign(packet, signingByIdentity(identity));
   VALIDATE_SUCCESS(packet, "Should get accepted, as signed by the anchor");
 
-  packet = unsignedPacket;
+  packet = Packet::makePacket(name);
   m_keyChain.sign(packet, signingByIdentity(subIdentity));
   VALIDATE_SUCCESS(packet, "Should get accepted, as signed by the policy-compliant cert");
 
-  packet = unsignedPacket;
+  packet = Packet::makePacket(name);
   m_keyChain.sign(packet, signingByIdentity(otherIdentity));
   VALIDATE_FAILURE(packet, "Should fail, as signed by the policy-violating cert");
 
-  packet = unsignedPacket;
+  packet = Packet::makePacket(name);
   m_keyChain.sign(packet, signingByIdentity(subSelfSignedIdentity));
   VALIDATE_FAILURE(packet, "Should fail, because subSelfSignedIdentity is not a trust anchor");
 
@@ -77,15 +73,15 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(Validate, Packet, Packets)
 
 BOOST_AUTO_TEST_CASE(NonKeyNameInsideLocator)
 {
-  // auto cert = identity.getDefaultKey().getDefaultCertificate().wireEncode();
-  // std::cerr << "Certificate idCert{\"" << toHex(cert.wire(), cert.size()) << "\"_block};" << std::endl;
+//  auto cert = identity.getDefaultKey().getDefaultCertificate().wireEncode();
+//  std::cerr << "Certificate idCert{\"" << toHex(cert) << "\"_block};" << std::endl;
 
-  // cert = subIdentity.getDefaultKey().getDefaultCertificate().wireEncode();
-  // std::cerr << "Certificate subIdCert{\"" << toHex(cert.wire(), cert.size()) << "\"_block};" << std::endl;
+//  cert = subIdentity.getDefaultKey().getDefaultCertificate().wireEncode();
+//  std::cerr << "Certificate subIdCert{\"" << toHex(cert) << "\"_block};" << std::endl;
 
-  // Data packet("/Security/ValidatorFixture/Sub1/Sub2/Packet");
-  // m_keyChain.sign(packet, signingByIdentity(subIdentity));
-  // std::cerr << "Data packet{\"" << toHex(packet.wireEncode().wire(), packet.wireEncode().size()) << "\"_block};" << std::endl;
+//  Data pkt("/Security/ValidatorFixture/Sub1/Sub2/Packet");
+//  m_keyChain.sign(pkt, signingByIdentity(subIdentity));
+//  std::cerr << "Data packet{\"" << toHex(pkt.wireEncode()) << "\"_block};" << std::endl;
 
   // These are hard-coded with a key locator that is the exact name of the certificate
   Certificate idCert{"06FD014C073C08085365637572697479081056616C696461746F724669787475726508034B455"

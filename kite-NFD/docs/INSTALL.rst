@@ -9,18 +9,21 @@ following platforms:
 
 -  Ubuntu 18.04 (amd64, armhf, i386)
 -  Ubuntu 20.04 (amd64)
--  macOS 10.13
--  macOS 10.14
+-  Ubuntu 21.10 (amd64)
 -  macOS 10.15
+-  macOS 11 (Intel only)
 -  CentOS 8
 
 NFD is known to work on the following platforms, although they are not officially
 supported:
 
--  Debian 10 (Buster)
+-  Alpine >= 3.12
+-  Debian >= 10
 -  Fedora >= 29
 -  Gentoo Linux
--  Raspbian >= 2019-06-20 (Buster)
+-  Raspberry Pi OS (formerly Raspbian) >= 2019-06-20
+-  FreeBSD >= 12.0
+-  macOS 10.14
 
 .. _Install NFD on Ubuntu Linux using the NDN PPA repository:
 
@@ -107,7 +110,7 @@ On Linux, NFD needs the following dependencies to enable optional features:
 
   .. code-block:: sh
 
-    sudo dnf config-manager --enable PowerTools  # on CentOS only
+    sudo dnf config-manager --enable powertools  # on CentOS only
     sudo dnf install libpcap-devel systemd-devel
 
 Build

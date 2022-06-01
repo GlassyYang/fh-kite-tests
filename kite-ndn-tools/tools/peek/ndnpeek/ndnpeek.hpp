@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -34,9 +34,9 @@
 
 #include <ndn-cxx/link.hpp>
 #include <ndn-cxx/util/scheduler.hpp>
+#include <ndn-cxx/kite/request.hpp>
 
-namespace ndn {
-namespace peek {
+namespace ndn::peek {
 
 /**
  * @brief options for NdnPeek
@@ -47,7 +47,7 @@ struct PeekOptions
   Name name;
   bool canBePrefix = false;
   bool mustBeFresh = false;
-  shared_ptr<Link> link;
+  std::vector<Name> forwardingHint;
   time::milliseconds interestLifetime = DEFAULT_INTEREST_LIFETIME;
   optional<uint8_t> hopLimit;
   shared_ptr<Buffer> applicationParameters;
@@ -59,7 +59,7 @@ struct PeekOptions
   optional<time::milliseconds> timeout;
 };
 
-class NdnPeek : boost::noncopyable
+class NdnPeek : noncopyable
 {
 public:
   NdnPeek(Face& face, const PeekOptions& options);
@@ -114,13 +114,12 @@ private:
   const PeekOptions m_options;
   Face& m_face;
   Scheduler m_scheduler;
-  time::steady_clock::TimePoint m_sendTime;
+  time::steady_clock::time_point m_sendTime;
   ScopedPendingInterestHandle m_pendingInterest;
   scheduler::ScopedEventId m_timeoutEvent;
   Result m_result = Result::UNKNOWN;
 };
 
-} // namespace peek
-} // namespace ndn
+} // namespace ndn::peek
 
 #endif // NDN_TOOLS_NDNPEEK_NDNPEEK_HPP

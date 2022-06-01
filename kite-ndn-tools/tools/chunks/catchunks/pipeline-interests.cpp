@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2016-2019, Regents of the University of California,
+ * Copyright (c) 2016-2022, Regents of the University of California,
  *                          Colorado State University,
  *                          University Pierre & Marie Curie, Sorbonne University.
  *
@@ -31,18 +31,13 @@
 #include "pipeline-interests.hpp"
 #include "data-fetcher.hpp"
 
-namespace ndn {
-namespace chunks {
+#include <boost/asio/io_service.hpp>
+
+namespace ndn::chunks {
 
 PipelineInterests::PipelineInterests(Face& face, const Options& opts)
   : m_options(opts)
   , m_face(face)
-  , m_hasFinalBlockId(false)
-  , m_lastSegmentNo(0)
-  , m_nReceived(0)
-  , m_receivedSize(0)
-  , m_nextSegmentNo(0)
-  , m_isStopping(false)
 {
 }
 
@@ -158,5 +153,4 @@ PipelineInterests::formatThroughput(double throughput)
   return "";
 }
 
-} // namespace chunks
-} // namespace ndn
+} // namespace ndn::chunks

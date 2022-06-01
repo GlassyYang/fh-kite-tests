@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -26,9 +26,8 @@
 #include "ndn-cxx/ims/in-memory-storage-persistent.hpp"
 #include "ndn-cxx/util/sha256.hpp"
 
-#include "tests/boost-test.hpp"
-#include "tests/make-interest-data.hpp"
-#include "tests/unit/unit-test-time-fixture.hpp"
+#include "tests/test-common.hpp"
+#include "tests/unit/io-fixture.hpp"
 
 #include <boost/mpl/vector.hpp>
 
@@ -63,17 +62,17 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(Insertion2, T, InMemoryStorages)
 
   Name name("/a");
 
-  uint32_t content1 = 1;
-  shared_ptr<Data> data1 = makeData(name);
+  const uint8_t content1[] = {1, 2, 3, 4};
+  auto data1 = makeData(name);
   data1->setFreshnessPeriod(99999_ms);
-  data1->setContent(reinterpret_cast<const uint8_t*>(&content1), sizeof(content1));
+  data1->setContent(content1);
   signData(data1);
   ims.insert(*data1);
 
-  uint32_t content2 = 2;
-  shared_ptr<Data> data2 = makeData(name);
+  const uint8_t content2[] = {5, 6, 7, 8};
+  auto data2 = makeData(name);
   data2->setFreshnessPeriod(99999_ms);
-  data2->setContent(reinterpret_cast<const uint8_t*>(&content2), sizeof(content2));
+  data2->setContent(content2);
   signData(data2);
   ims.insert(*data2);
 
@@ -120,7 +119,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(InsertAndFind, T, InMemoryStorages)
 
   shared_ptr<Interest> interest = makeInterest(name);
 
-  shared_ptr<const Data> found = ims.find(*interest);
+  auto found = ims.find(*interest);
   BOOST_CHECK(found != nullptr);
   BOOST_CHECK_EQUAL(data->getName(), found->getName());
 }
@@ -136,9 +135,8 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(InsertAndNotFind, T, InMemoryStorages)
   Name name2("/not/find");
   shared_ptr<Interest> interest = makeInterest(name2);
 
-  shared_ptr<const Data> found = ims.find(*interest);
-
-  BOOST_CHECK_EQUAL(found.get(), static_cast<const Data*>(0));
+  auto found = ims.find(*interest);
+  BOOST_CHECK(found == nullptr);
 }
 
 BOOST_AUTO_TEST_CASE_TEMPLATE(InsertAndFindByName, T, InMemoryStorages)
@@ -150,7 +148,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(InsertAndFindByName, T, InMemoryStorages)
   shared_ptr<Data> data = makeData(name);
   ims.insert(*data);
 
-  shared_ptr<const Data> found = ims.find(name);
+  auto found = ims.find(name);
   BOOST_CHECK(found != nullptr);
   BOOST_CHECK_EQUAL(data->getName(), found->getName());
 }
@@ -164,7 +162,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(InsertAndFindByFullName, T, InMemoryStorages)
   shared_ptr<Data> data = makeData(name);
   ims.insert(*data);
 
-  shared_ptr<const Data> found = ims.find(data->getFullName());
+  auto found = ims.find(data->getFullName());
   BOOST_CHECK(found != nullptr);
   BOOST_CHECK_EQUAL(data->getFullName(), found->getFullName());
 }
@@ -179,7 +177,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(InsertAndNotFindByName, T, InMemoryStorages)
 
   Name name2("/not/find");
 
-  shared_ptr<const Data> found = ims.find(name2);
+  auto found = ims.find(name2);
   BOOST_CHECK(found == nullptr);
 }
 
@@ -188,18 +186,18 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(InsertAndNotFindByFullName, T, InMemoryStorages)
   T ims;
 
   Name name("/a");
-  uint32_t content1 = 1;
-  shared_ptr<Data> data1 = makeData(name);
-  data1->setContent(reinterpret_cast<const uint8_t*>(&content1), sizeof(content1));
+  const uint8_t content1[] = {1, 2, 3, 4};
+  auto data1 = makeData(name);
+  data1->setContent(content1);
   signData(data1);
   ims.insert(*data1);
 
-  uint32_t content2 = 2;
-  shared_ptr<Data> data2 = makeData(name);
-  data2->setContent(reinterpret_cast<const uint8_t*>(&content2), sizeof(content2));
+  const uint8_t content2[] = {5, 6, 7, 8};
+  auto data2 = makeData(name);
+  data2->setContent(content2);
   signData(data2);
 
-  shared_ptr<const Data> found = ims.find(data2->getFullName());
+  auto found = ims.find(data2->getFullName());
   BOOST_CHECK(found == nullptr);
 }
 
@@ -209,17 +207,17 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(InsertAndEraseByName, T, InMemoryStorages)
 
   Name name("/insertandremovebyname");
 
-  uint32_t content1 = 1;
-  shared_ptr<Data> data1 = makeData(name);
+  const uint8_t content1[] = {1, 2, 3, 4};
+  auto data1 = makeData(name);
   data1->setFreshnessPeriod(99999_ms);
-  data1->setContent(reinterpret_cast<const uint8_t*>(&content1), sizeof(content1));
+  data1->setContent(content1);
   signData(data1);
   ims.insert(*data1);
 
-  uint32_t content2 = 2;
-  shared_ptr<Data> data2 = makeData(name);
+  const uint8_t content2[] = {5, 6, 7, 8};
+  auto data2 = makeData(name);
   data2->setFreshnessPeriod(99999_ms);
-  data2->setContent(reinterpret_cast<const uint8_t*>(&content2), sizeof(content2));
+  data2->setContent(content2);
   signData(data2);
   ims.insert(*data2);
 
@@ -272,12 +270,11 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(DigestCalculation, T, InMemoryStorages)
 {
   shared_ptr<Data> data = makeData("/digest/compute");
 
-  ConstBufferPtr digest1 = util::Sha256::computeDigest(data->wireEncode().wire(), data->wireEncode().size());
+  auto digest1 = util::Sha256::computeDigest(data->wireEncode());
   BOOST_CHECK_EQUAL(digest1->size(), 32);
 
   InMemoryStorageEntry entry;
   entry.setData(*data);
-
   BOOST_CHECK_EQUAL_COLLECTIONS(digest1->begin(), digest1->end(),
                                 entry.getFullName()[-1].value_begin(),
                                 entry.getFullName()[-1].value_end());
@@ -370,7 +367,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(EraseCanonical, T, InMemoryStorages)
   shared_ptr<Data> data7 = makeData("/c/c/1");
   ims.insert(*data7);
 
-  ConstBufferPtr digest1 = util::Sha256::computeDigest(data->wireEncode().wire(), data->wireEncode().size());
+  auto digest1 = util::Sha256::computeDigest(data->wireEncode());
 
   Name name("/a");
   ims.erase(name);
@@ -444,21 +441,16 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(InsertAndEvict, T, InMemoryStoragesLimited)
 }
 
 // Find function is implemented at the base case, so it's sufficient to test for one derived class.
-class FindFixture : public tests::UnitTestTimeFixture
+class FindFixture : public IoFixture
 {
 protected:
-  FindFixture()
-    : m_ims(io)
-  {
-  }
-
   Name
   insert(uint32_t id, const Name& name,
          const std::function<void(Data&)>& modifyData = nullptr,
          const time::milliseconds& freshWindow = InMemoryStorage::INFINITE_WINDOW)
   {
     auto data = makeData(name);
-    data->setContent(reinterpret_cast<const uint8_t*>(&id), sizeof(id));
+    data->setContent(make_span(reinterpret_cast<const uint8_t*>(&id), sizeof(id)));
 
     if (modifyData != nullptr) {
       modifyData(*data);
@@ -480,8 +472,8 @@ protected:
   uint32_t
   find()
   {
-    shared_ptr<const Data> found = m_ims.find(*m_interest);
-    if (found == 0) {
+    auto found = m_ims.find(*m_interest);
+    if (found == nullptr) {
       return 0;
     }
     const Block& content = found->getContent();
@@ -494,7 +486,7 @@ protected:
   }
 
 protected:
-  InMemoryStoragePersistent m_ims;
+  InMemoryStoragePersistent m_ims{m_io};
   shared_ptr<Interest> m_interest;
 };
 

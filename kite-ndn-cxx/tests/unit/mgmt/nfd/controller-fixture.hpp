@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,15 +19,15 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_TESTS_UNIT_MGMT_NFD_CONTROLLER_FIXTURE_HPP
-#define NDN_TESTS_UNIT_MGMT_NFD_CONTROLLER_FIXTURE_HPP
+#ifndef NDN_CXX_TESTS_UNIT_MGMT_NFD_CONTROLLER_FIXTURE_HPP
+#define NDN_CXX_TESTS_UNIT_MGMT_NFD_CONTROLLER_FIXTURE_HPP
 
 #include "ndn-cxx/mgmt/nfd/controller.hpp"
 #include "ndn-cxx/security/certificate-fetcher-offline.hpp"
 #include "ndn-cxx/util/dummy-client-face.hpp"
 
 #include "tests/unit/dummy-validator.hpp"
-#include "tests/unit/identity-management-time-fixture.hpp"
+#include "tests/unit/io-key-chain-fixture.hpp"
 
 namespace ndn {
 namespace nfd {
@@ -35,18 +35,17 @@ namespace tests {
 
 using namespace ndn::tests;
 
-class ControllerFixture : public IdentityManagementTimeFixture
+class ControllerFixture : public IoKeyChainFixture
 {
 protected:
   ControllerFixture()
-    : face(io, m_keyChain)
+    : face(m_io, m_keyChain)
     , m_validator(true)
     , controller(face, m_keyChain, m_validator)
-    , commandFailCallback(bind(&ControllerFixture::recordCommandFail, this, _1))
-    , datasetFailCallback(bind(&ControllerFixture::recordDatasetFail, this, _1, _2))
+    , commandFailCallback([this] (const auto& resp) { failCodes.push_back(resp.getCode()); })
+    , datasetFailCallback([this] (auto code, const auto&) { failCodes.push_back(code); })
   {
-    Name identityName("/localhost/ControllerFixture");
-    m_keyChain.setDefaultIdentity(this->addIdentity(identityName));
+    m_keyChain.setDefaultIdentity(m_keyChain.createIdentity("/localhost/ControllerFixture"));
   }
 
   /** \brief controls whether Controller's validator should accept or reject validation requests
@@ -58,19 +57,6 @@ protected:
   setValidationResult(bool shouldAccept)
   {
     m_validator.getPolicy().setResult(shouldAccept);
-  }
-
-private:
-  void
-  recordCommandFail(const ControlResponse& response)
-  {
-    failCodes.push_back(response.getCode());
-  }
-
-  void
-  recordDatasetFail(uint32_t code, const std::string& reason)
-  {
-    failCodes.push_back(code);
   }
 
 protected:
@@ -86,4 +72,4 @@ protected:
 } // namespace nfd
 } // namespace ndn
 
-#endif // NDN_TESTS_UNIT_MGMT_NFD_CONTROLLER_FIXTURE_HPP
+#endif // NDN_CXX_TESTS_UNIT_MGMT_NFD_CONTROLLER_FIXTURE_HPP

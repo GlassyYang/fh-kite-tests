@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,7 +22,7 @@
 #include "ndnsec.hpp"
 #include "util.hpp"
 
-#include "ndn-cxx/util/io.hpp"
+#include "ndn-cxx/security/signing-helpers.hpp"
 
 namespace ndn {
 namespace ndnsec {
@@ -69,7 +69,7 @@ ndnsec_sign_req(int argc, char** argv)
     return 2;
   }
 
-  security::v2::KeyChain keyChain;
+  KeyChain keyChain;
 
   security::Identity identity;
   security::Key key;
@@ -78,33 +78,15 @@ ndnsec_sign_req(int argc, char** argv)
     key = identity.getDefaultKey();
   }
   else {
-    identity = keyChain.getPib().getIdentity(security::v2::extractIdentityFromKeyName(name));
+    identity = keyChain.getPib().getIdentity(security::extractIdentityFromKeyName(name));
     key = identity.getKey(name);
   }
 
   // Create signing request (similar to self-signed certificate)
-  security::v2::Certificate certificate;
-
-  // set name
-  Name certificateName = key.getName();
-  certificateName
-    .append("cert-request")
-    .appendVersion();
-  certificate.setName(certificateName);
-
-  // set metainfo
-  certificate.setContentType(tlv::ContentType_Key);
-  certificate.setFreshnessPeriod(1_h);
-
-  // set content
-  certificate.setContent(key.getPublicKey().data(), key.getPublicKey().size());
-
-  // set signature-info
-  SignatureInfo signatureInfo;
-  auto now = time::system_clock::now();
-  signatureInfo.setValidityPeriod(security::ValidityPeriod(now, now + 10_days));
-
-  keyChain.sign(certificate, security::SigningInfo(key).setSignatureInfo(signatureInfo));
+  security::MakeCertificateOptions opts;
+  opts.issuerId = name::Component::fromEscapedString("cert-request");
+  opts.validity = security::ValidityPeriod::makeRelative(-1_s, 10_days);
+  auto certificate = keyChain.makeCertificate(key, security::signingByKey(key), opts);
 
   io::save(certificate, std::cout);
 

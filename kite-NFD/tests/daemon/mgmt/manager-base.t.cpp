@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -88,7 +88,7 @@ BOOST_FIXTURE_TEST_SUITE(TestManagerBase, ManagerBaseFixture)
 BOOST_AUTO_TEST_CASE(RegisterCommandHandler)
 {
   bool wasCommandHandlerCalled = false;
-  auto handler = bind([&] { wasCommandHandlerCalled = true; });
+  auto handler = [&] (auto&&...) { wasCommandHandlerCalled = true; };
 
   m_manager.registerCommandHandler<TestCommandVoidParameters>("test-void", handler);
   m_manager.registerCommandHandler<TestCommandRequireName>("test-require-name", handler);
@@ -109,7 +109,7 @@ BOOST_AUTO_TEST_CASE(RegisterCommandHandler)
 BOOST_AUTO_TEST_CASE(RegisterStatusDataset)
 {
   bool isStatusDatasetCalled = false;
-  auto handler = bind([&] { isStatusDatasetCalled = true; });
+  auto handler = [&] (auto&&...) { isStatusDatasetCalled = true; };
 
   m_manager.registerStatusDatasetHandler("test-status", handler);
   setTopPrefix();
@@ -123,13 +123,12 @@ BOOST_AUTO_TEST_CASE(RegisterNotificationStream)
   auto post = m_manager.registerNotificationStream("test-notification");
   setTopPrefix();
 
-  const uint8_t buf[] = {0x82, 0x01, 0x02};
-  post(Block(buf, sizeof(buf)));
+  post(Block({0x82, 0x01, 0x02}));
   advanceClocks(1_ms);
 
   BOOST_REQUIRE_EQUAL(m_responses.size(), 1);
   BOOST_CHECK_EQUAL(m_responses[0].getName(),
-                    Name("/localhost/nfd/test-module/test-notification/%FE%00"));
+                    Name("/localhost/nfd/test-module/test-notification").appendSequenceNumber(0));
 }
 
 BOOST_AUTO_TEST_CASE(ExtractRequester)
@@ -142,8 +141,9 @@ BOOST_AUTO_TEST_CASE(ExtractRequester)
 
   requesterName = "";
   m_manager.extractRequester(makeControlCommandRequest("/test/interest/signed", ControlParameters()), testAccept);
-  auto keyLocator = m_keyChain.getPib().getIdentity(DEFAULT_COMMAND_SIGNER_IDENTITY).getDefaultKey().getName();
-  BOOST_CHECK_EQUAL(requesterName, keyLocator.toUri());
+  BOOST_CHECK_EQUAL(requesterName,
+    m_keyChain.getPib().getIdentity(DEFAULT_COMMAND_SIGNER_IDENTITY)
+      .getDefaultKey().getDefaultCertificate().getName().toUri());
 }
 
 BOOST_AUTO_TEST_CASE(ValidateParameters)

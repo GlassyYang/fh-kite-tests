@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Arizona Board of Regents.
+ * Copyright (c) 2014-2022,  Arizona Board of Regents.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -20,34 +20,31 @@
 #include "tools/ping/client/ping.hpp"
 
 #include "tests/test-common.hpp"
+#include "tests/io-fixture.hpp"
+
 #include <ndn-cxx/util/dummy-client-face.hpp>
 
-namespace ndn {
-namespace ping {
-namespace client {
-namespace tests {
+namespace ndn::ping::client::tests {
 
 using namespace ndn::tests;
 
 BOOST_AUTO_TEST_SUITE(Ping)
-BOOST_AUTO_TEST_SUITE(TestPing)
+BOOST_AUTO_TEST_SUITE(TestClient)
 
-using ping::client::Ping;
+using client::Ping;
 
-BOOST_FIXTURE_TEST_CASE(Basic, UnitTestTimeFixture)
+BOOST_FIXTURE_TEST_CASE(Basic, IoFixture)
 {
+  util::DummyClientFace face(m_io, {true, true});
   Options pingOptions;
-  pingOptions.prefix = "ndn:/test-prefix";
+  pingOptions.prefix = "/test-prefix";
   pingOptions.shouldAllowStaleData = false;
   pingOptions.shouldGenerateRandomSeq = false;
   pingOptions.shouldPrintTimestamp = false;
   pingOptions.nPings = 4;
-  pingOptions.interval = time::milliseconds(100);
-  pingOptions.timeout = time::milliseconds(2000);
+  pingOptions.interval = 100_ms;
+  pingOptions.timeout = 2_s;
   pingOptions.startSeq = 1000;
-
-  boost::asio::io_service io;
-  util::DummyClientFace face(io, {true, true});
   Ping ping(face, pingOptions);
 
   int nFinishSignals = 0;
@@ -55,10 +52,10 @@ BOOST_FIXTURE_TEST_CASE(Basic, UnitTestTimeFixture)
   std::vector<uint64_t> nackSeqs;
   std::vector<uint64_t> timeoutSeqs;
 
-  ping.afterData.connect(bind([&] (uint64_t seq) { dataSeqs.push_back(seq); }, _1));
-  ping.afterNack.connect(bind([&] (uint64_t seq) { nackSeqs.push_back(seq); }, _1));
-  ping.afterTimeout.connect(bind([&] (uint64_t seq) { timeoutSeqs.push_back(seq); }, _1));
-  ping.afterFinish.connect(bind([&] {
+  ping.afterData.connect([&] (uint64_t seq, auto&&...) { dataSeqs.push_back(seq); });
+  ping.afterNack.connect([&] (uint64_t seq, auto&&...) { nackSeqs.push_back(seq); });
+  ping.afterTimeout.connect([&] (uint64_t seq, auto&&...) { timeoutSeqs.push_back(seq); });
+  ping.afterFinish.connect([&] {
     BOOST_REQUIRE_EQUAL(dataSeqs.size(), 2);
     BOOST_REQUIRE_EQUAL(nackSeqs.size(), 1);
     BOOST_REQUIRE_EQUAL(timeoutSeqs.size(), 1);
@@ -69,39 +66,31 @@ BOOST_FIXTURE_TEST_CASE(Basic, UnitTestTimeFixture)
     BOOST_CHECK_EQUAL(timeoutSeqs[0], 1003);
 
     nFinishSignals++;
-  }));
+  });
 
   ping.start();
 
-  this->advanceClocks(io, time::milliseconds(1), 500);
+  this->advanceClocks(1_ms, 500);
   BOOST_REQUIRE_EQUAL(face.sentInterests.size(), 4);
 
   auto data = makeData("/test-prefix/ping/1000");
   data->setFreshnessPeriod(1_s);
   face.receive(*data);
 
-  lp::Nack nack(face.sentInterests[1]);
-  nack.setReason(lp::NackReason::DUPLICATE);
-  face.receive(nack);
+  face.receive(makeNack(face.sentInterests[1], lp::NackReason::DUPLICATE));
 
   data = makeData("/test-prefix/ping/1002");
   data->setFreshnessPeriod(1_s);
   face.receive(*data);
 
-  this->advanceClocks(io, time::milliseconds(100), 20);
+  this->advanceClocks(100_ms, 20);
 
-  // ndn:/test-prefix/ping/1003 is unanswered and will timeout
+  // /test-prefix/ping/1003 is unanswered and will timeout
 
   BOOST_CHECK_EQUAL(nFinishSignals, 1);
-
-  face.shutdown();
-  io.stop();
 }
 
-BOOST_AUTO_TEST_SUITE_END() // TestPing
+BOOST_AUTO_TEST_SUITE_END() // TestClient
 BOOST_AUTO_TEST_SUITE_END() // Ping
 
-} // namespace tests
-} // namespace client
-} // namespace ping
-} // namespace ndn
+} // namespace ndn::ping::client::tests

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,9 +20,10 @@
  */
 
 #include "ndn-cxx/security/certificate-fetcher-direct-fetch.hpp"
-#include "ndn-cxx/security/validation-policy-simple-hierarchy.hpp"
+
 #include "ndn-cxx/lp/nack.hpp"
 #include "ndn-cxx/lp/tags.hpp"
+#include "ndn-cxx/security/validation-policy-simple-hierarchy.hpp"
 
 #include "tests/boost-test.hpp"
 #include "tests/unit/security/validator-fixture.hpp"
@@ -73,9 +74,7 @@ public:
     cache.insert(subSubIdentity.getDefaultKey().getDefaultCertificate());
 
     m_keyChain.sign(data, signingByIdentity(subSubIdentity));
-    interest.setCanBePrefix(false);
     m_keyChain.sign(interest, signingByIdentity(subSubIdentity));
-    interestNoTag.setCanBePrefix(false);
     m_keyChain.sign(interestNoTag, signingByIdentity(subSubIdentity));
 
     data.setTag(make_shared<lp::IncomingFaceIdTag>(123));

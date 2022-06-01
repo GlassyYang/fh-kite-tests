@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2020,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -38,13 +38,15 @@ namespace ip = boost::asio::ip;
 
 UdpChannel::UdpChannel(const udp::Endpoint& localEndpoint,
                        time::nanoseconds idleTimeout,
-                       bool wantCongestionMarking)
+                       bool wantCongestionMarking,
+                       size_t defaultMtu)
   : m_localEndpoint(localEndpoint)
   , m_socket(getGlobalIoService())
   , m_idleFaceTimeout(idleTimeout)
   , m_wantCongestionMarking(wantCongestionMarking)
 {
   setUri(FaceUri(m_localEndpoint));
+  setDefaultMtu(defaultMtu);
   NFD_LOG_CHAN_INFO("Creating channel");
 }
 
@@ -122,6 +124,7 @@ UdpChannel::handleNewPeer(const boost::system::error_code& error,
   try {
     FaceParams params;
     params.persistency = ndn::nfd::FACE_PERSISTENCY_ON_DEMAND;
+    params.mtu = getDefaultMtu();
     std::tie(isCreated, face) = createFace(m_remoteEndpoint, params);
   }
   catch (const boost::system::system_error& e) {
@@ -138,7 +141,7 @@ UdpChannel::handleNewPeer(const boost::system::error_code& error,
 
   // dispatch the datagram to the face for processing
   auto* transport = static_cast<UnicastUdpTransport*>(face->getTransport());
-  transport->receiveDatagram(m_receiveBuffer.data(), nBytesReceived, error);
+  transport->receiveDatagram(ndn::make_span(m_receiveBuffer).first(nBytesReceived), error);
 
   waitForNewPeer(onFaceCreated, onReceiveFailed);
 }
@@ -180,9 +183,7 @@ UdpChannel::createFace(const udp::Endpoint& remoteEndpoint,
     options.defaultCongestionThreshold = *params.defaultCongestionThreshold;
   }
 
-  if (params.mtu) {
-    options.overrideMtu = *params.mtu;
-  }
+  options.overrideMtu = params.mtu.value_or(getDefaultMtu());
 
   auto linkService = make_unique<GenericLinkService>(options);
   auto transport = make_unique<UnicastUdpTransport>(std::move(socket), params.persistency,

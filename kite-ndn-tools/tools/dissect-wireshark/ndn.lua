@@ -49,27 +49,36 @@ function getNonNegativeInteger(b)
    return UInt64.max()
 end
 
-function getUriFromImplicitSha256DigestComponent(b)
-   s = "sha256digest="
+function getUriFromSha256DigestComponent(b)
+   local s = ""
+   if b.type == 1 then
+      s = "sha256digest="
+   elseif b.type == 2 then
+      s = "params-sha256="
+   else
+      assert(false)
+   end
+
    for i = 0, (b.length - 1) do
-      byte = b.tvb(b.offset + b.typeLen + b.lengthLen + i, 1)
+      local byte = b.tvb(b.offset + b.typeLen + b.lengthLen + i, 1)
       s = s .. string.format("%02x", byte:uint())
    end
    return s
 end
 
 function getUriFromNameComponent(b)
-   if b.type == 1 then
-      return getUriFromImplicitSha256DigestComponent(b)
+   if b.type == 1 or b.type == 2 then
+      return getUriFromSha256DigestComponent(b)
    end
-   s = ""
+
+   local s = ""
    if b.type ~= 8 then
       s = string.format("%d=", b.type)
    end
    hasNonPeriod = false
    for i = 0, (b.length - 1) do
-      byte = b.tvb(b.offset + b.typeLen + b.lengthLen + i, 1)
-      ch = byte:uint()
+      local byte = b.tvb(b.offset + b.typeLen + b.lengthLen + i, 1)
+      local ch = byte:uint()
       hasNonPeriod = hasNonPeriod or ch ~= 0x2E
       if (ch >= 0x41 and ch <= 0x5A) or (ch >= 0x61 and ch <= 0x7A) or (ch >= 0x30 and ch <= 0x39) or ch == 0x2D or ch == 0x2E or ch == 0x5F or ch == 0x7E then
          s = s .. byte:string()
@@ -87,6 +96,7 @@ function getUriFromName(b)
    if b.elements == nil then
       return "/"
    end
+
    components = {}
    for i, comp in pairs(b.elements) do
       table.insert(components, getUriFromNameComponent(comp))
@@ -101,14 +111,12 @@ function getUriFromFinalBlockId(b)
    return getUriFromNameComponent(b.elements[1])
 end
 
-function getUriFromExclude(block)
-   -- @todo
-   return ""
-end
-
 function getNackReasonDetail(b)
+   assert(b.type == 801)
    local code = getNonNegativeInteger(b)
-   if code == UInt64(50) then return "Congestion"
+
+   if code == UInt64(0) then return "None"
+   elseif code == UInt64(50) then return "Congestion"
    elseif code == UInt64(100) then return "Duplicate"
    elseif code == UInt64(150) then return "NoRoute"
    else return tostring(code)
@@ -116,16 +124,27 @@ function getNackReasonDetail(b)
 end
 
 function getCachePolicyDetail(b)
+   assert(b.type == 821)
    local code = getNonNegativeInteger(b)
-   if (code == 1) then return "NoCache"
-   else return "Unknown"
+
+   if code == UInt64(0) then return "None"
+   elseif code == UInt64(1) then return "NoCache"
+   else return tostring(code) .. " (unknown)"
    end
 end
 
 function getNonce(b)
    assert(b.type == 10)
-   if (b.length ~= 4) then
+   if b.length ~= 4 then
       return "invalid (should have 4 octets)"
+   end
+   return getValue(b):uint()
+end
+
+function getHopLimit(b)
+   assert(b.type == 34)
+   if b.length ~= 1 then
+      return "invalid (should have 1 octet)"
    end
    return getValue(b):uint()
 end
@@ -139,11 +158,10 @@ local AppPrivateBlock2 = 800
 local AppPrivateBlock3 = 1000
 
 function canIgnoreTlvType(t)
-   if (t < AppPrivateBlock2 or t >= AppPrivateBlock3) then
+   if t < AppPrivateBlock2 or t >= AppPrivateBlock3 then
       return false
    else
-      local mod = math.fmod(t, 2)
-      if (mod == 1) then
+      if math.fmod(t, 2) == 1 then
          return true
       else
          return false
@@ -155,16 +173,16 @@ function getGenericBlockInfo(block)
    local name = ""
 
    -- TODO: Properly format informational message based type value reservations
-   -- (http://named-data.net/doc/ndn-tlv/types.html#type-value-reservations)
+   -- (https://named-data.net/doc/NDN-packet-spec/current/types.html#tlv-type-number-reservations)
    if (block.type <= AppPrivateBlock1) then
       name = "Unrecognized from the reserved range " .. 0 .. "-" .. AppPrivateBlock1 .. ""
    elseif (AppPrivateBlock1 < block.type and block.type < AppPrivateBlock2) then
       name = "Unrecognized from the reserved range " .. (AppPrivateBlock1 + 1) .. "-" .. (AppPrivateBlock2 - 1) .. ""
    elseif (AppPrivateBlock2 <= block.type and block.type <= AppPrivateBlock3) then
-      if (canIgnoreTlvType(block.type)) then
+      if canIgnoreTlvType(block.type) then
          name = "Unknown field (ignored)"
       else
-      name = "Unknown field"
+         name = "Unknown field"
       end
    else
       name = "RESERVED_3"
@@ -178,67 +196,54 @@ end
 
 local NDN_DICT = {
    -- Name and name components
-   [7]  = {name = "Name"                         , field = ProtoField.string("ndn.name", "Name")                                   , value = getUriFromName},
-   [1]  = {name = "ImplicitSha256DigestComponent", field = ProtoField.string("ndn.implicitsha256", "ImplicitSha256DigestComponent"), value = getUriFromNameComponent},
-   [8]  = {name = "GenericNameComponent"         , field = ProtoField.string("ndn.namecomponent", "NameComponent")                 , value = getUriFromNameComponent},
+   [7]  = {name = "Name"                           , field = ProtoField.string("ndn.name", "Name")                                    , value = getUriFromName},
+   [1]  = {name = "ImplicitSha256DigestComponent"  , field = ProtoField.string("ndn.implicit_sha256", "ImplicitSha256DigestComponent"), value = getUriFromNameComponent},
+   [2]  = {name = "ParametersSha256DigestComponent", field = ProtoField.string("ndn.params_sha256", "ParametersSha256DigestComponent"), value = getUriFromNameComponent},
+   [8]  = {name = "GenericNameComponent"           , field = ProtoField.string("ndn.namecomponent", "GenericNameComponent")           , value = getUriFromNameComponent},
 
    -- Interest and its sub-elements in Packet Format v0.3
    [5]  = {name = "Interest"                     , summary = true},
    [33] = {name = "CanBePrefix"                  , field = ProtoField.string("ndn.canbeprefix", "CanBePrefix")                     , value = getTrue},
    [18] = {name = "MustBeFresh"                  , field = ProtoField.string("ndn.mustbefresh", "MustBeFresh")                     , value = getTrue},
-   -- [30] = {name = "ForwardingHint"               , summary = true},
-   -- ForwardingHint and LinkPreference have the same TLV-TYPE number, so we can't recognize both for now (see #4185).
-   [31] = {name = "LinkDelegation"               , summary = true},
-   [30] = {name = "LinkPreference"               , field = ProtoField.uint64("ndn.linkpreference", "LinkPreference", base.DEC)     , value = getNonNegativeInteger},
+   [30] = {name = "ForwardingHint"               , summary = true},
    [10] = {name = "Nonce"                        , field = ProtoField.uint32("ndn.nonce", "Nonce", base.HEX)                       , value = getNonce},
-   [12] = {name = "InterestLifetime"             , field = ProtoField.uint64("ndn.interestlifetime", "InterestLifetime", base.DEC) , value = getNonNegativeInteger},
-   [34] = {name = "HopLimit"                     , field = ProtoField.uint64("ndn.hoplimit", "HopLimit", base.DEC)                 , value = getNonNegativeInteger},
-   [36] = {name = "ApplicationParameters"        , field = ProtoField.string("ndn.applicationparameters", "ApplicationParameters")},
+   [12] = {name = "InterestLifetime"             , field = ProtoField.uint64("ndn.lifetime", "InterestLifetime", base.DEC)         , value = getNonNegativeInteger},
+   [34] = {name = "HopLimit"                     , field = ProtoField.uint8("ndn.hoplimit", "HopLimit", base.DEC)                  , value = getHopLimit},
+   [36] = {name = "ApplicationParameters"        , field = ProtoField.bytes("ndn.app_params", "ApplicationParameters")},
 
    -- Data and its sub-elements in Packet Format v0.3
    [6]  = {name = "Data"                         , summary = true},
    [20] = {name = "MetaInfo"                     , summary = true},
-   [24] = {name = "ContentType"                  , field = ProtoField.uint64("ndn.contenttype", "Content Type", base.DEC)          , value = getNonNegativeInteger},
-   [25] = {name = "FreshnessPeriod"              , field = ProtoField.uint64("ndn.freshnessperiod", "FreshnessPeriod", base.DEC)   , value = getNonNegativeInteger},
-   [26] = {name = "FinalBlockId"                 , field = ProtoField.string("ndn.finalblockid", "FinalBlockId")                   , value = getUriFromFinalBlockId},
-   [21] = {name = "Content"                      , field = ProtoField.string("ndn.content", "Content")},
+   [24] = {name = "ContentType"                  , field = ProtoField.uint64("ndn.contenttype", "ContentType", base.DEC)           , value = getNonNegativeInteger},
+   [25] = {name = "FreshnessPeriod"              , field = ProtoField.uint64("ndn.freshness", "FreshnessPeriod", base.DEC)         , value = getNonNegativeInteger},
+   [26] = {name = "FinalBlockId"                 , field = ProtoField.string("ndn.finalblock", "FinalBlockId")                     , value = getUriFromFinalBlockId},
+   [21] = {name = "Content"                      , field = ProtoField.bytes("ndn.content", "Content")},
    [22] = {name = "SignatureInfo"                , summary = true},
-   [27] = {name = "SignatureType"                , field = ProtoField.uint64("ndn.signaturetype", "SignatureType", base.DEC)       , value = getNonNegativeInteger},
+   [27] = {name = "SignatureType"                , field = ProtoField.uint64("ndn.sigtype", "SignatureType", base.DEC)             , value = getNonNegativeInteger},
    [28] = {name = "KeyLocator"                   , summary = true},
    [29] = {name = "KeyDigest"                    , field = ProtoField.bytes("ndn.keydigest", "KeyDigest")},
-   [23] = {name = "SignatureValue"               , field = ProtoField.bytes("ndn.signaturevalue", "SignatureValue")},
+   [23] = {name = "SignatureValue"               , field = ProtoField.bytes("ndn.sigvalue", "SignatureValue")},
 
    -- NDNLPv2 headers
    [80] = {name = "Fragment"                     },
    [81] = {name = "Sequence"                     , field = ProtoField.uint64("ndn.sequence", "Sequence", base.DEC)                 , value = getNonNegativeInteger},
    [82] = {name = "FragIndex"                    , field = ProtoField.uint64("ndn.fragindex", "FragIndex", base.DEC)               , value = getNonNegativeInteger},
    [83] = {name = "FragCount"                    , field = ProtoField.uint64("ndn.fragcount", "FragCount", base.DEC)               , value = getNonNegativeInteger},
-   [98] = {name = "PitToken"                     , field = ProtoField.uint64("ndn.pit_token", "PitToken", base.DEC)                , value = getNonNegativeInteger},
+   [98] = {name = "PitToken"                     , field = ProtoField.bytes("ndn.pit_token", "PitToken")},
    [100] = {name = "LpPacket"                    , summary = true},
    [800] = {name = "Nack"                        , summary = true},
    [801] = {name = "NackReason"                  , field = ProtoField.string("ndn.nack_reason", "NackReason")                      , value = getNackReasonDetail},
-   [816] = {name = "NextHopFaceId"               , field = ProtoField.uint64("ndn.nexthop_faceid", "NextHopFaceId", base.DEC)      , value = getNonNegativeInteger},
-   [817] = {name = "IncomingFaceId"              , field = ProtoField.uint64("ndn.incoming_faceid", "IncomingFaceId", base.DEC)    , value = getNonNegativeInteger},
+   [812] = {name = "IncomingFaceId"              , field = ProtoField.uint64("ndn.incoming_face", "IncomingFaceId", base.DEC)      , value = getNonNegativeInteger},
+   [816] = {name = "NextHopFaceId"               , field = ProtoField.uint64("ndn.nexthop_face", "NextHopFaceId", base.DEC)        , value = getNonNegativeInteger},
    [820] = {name = "CachePolicy"                 , summary = true},
-   [821] = {name = "CachePolicyType"             , field = ProtoField.string("ndn.cachepolicy_type", "CachePolicyType")            , value = getCachePolicyDetail},
+   [821] = {name = "CachePolicyType"             , field = ProtoField.string("ndn.cache_policy", "CachePolicyType")                , value = getCachePolicyDetail},
    [832] = {name = "CongestionMark"              , field = ProtoField.uint64("ndn.congestion_mark", "CongestionMark", base.DEC)    , value = getNonNegativeInteger},
    [836] = {name = "Ack"                         , field = ProtoField.uint64("ndn.ack", "Ack", base.DEC)                           , value = getNonNegativeInteger},
-   [840] = {name = "TxSequence"                  , field = ProtoField.uint64("ndn.tx_sequence", "TxSequence", base.DEC)            , value = getNonNegativeInteger},
-
-   -- Deprecated elements
-   [9]  = {name = "Selectors"                    , summary = true},
-   [13] = {name = "MinSuffixComponents"          , field = ProtoField.uint64("ndn.minsuffix", "MinSuffixComponents")               , value = getNonNegativeInteger},
-   [14] = {name = "MaxSuffixComponents"          , field = ProtoField.uint64("ndn.maxsuffix", "MaxSuffixComponents")               , value = getNonNegativeInteger},
-   [15] = {name = "PublisherPublicKeyLocator"    , summary = true},
-   [16] = {name = "Exclude"                      , field = ProtoField.string("ndn.exclude", "Exclude")                             , value = getUriFromExclude},
-   [17] = {name = "ChildSelector"                , field = ProtoField.uint64("ndn.childselector", "ChildSelector", base.DEC)       , value = getNonNegativeInteger},
-   [19] = {name = "Any"                          , field = ProtoField.string("ndn.any", "Any")                                     , value = getTrue},
-   [32] = {name = "SelectedDelegation"           , field = ProtoField.uint64("ndn.selected_delegation", "SelectedDelegation", base.DEC), value = getNonNegativeInteger},
+   [840] = {name = "TxSequence"                  , field = ProtoField.uint64("ndn.txseq", "TxSequence", base.DEC)                  , value = getNonNegativeInteger},
 }
 
 -- -- Add protofields in NDN protocol
-ndn.fields = {
-}
+ndn.fields = {}
 for key, value in pairs(NDN_DICT) do
    table.insert(ndn.fields, value.field)
 end

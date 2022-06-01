@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,8 +22,7 @@
 #include "ndn-cxx/mgmt/nfd/controller.hpp"
 #include "ndn-cxx/mgmt/nfd/control-response.hpp"
 
-#include "tests/boost-test.hpp"
-#include "tests/make-interest-data.hpp"
+#include "tests/test-common.hpp"
 #include "tests/unit/mgmt/nfd/controller-fixture.hpp"
 
 namespace ndn {
@@ -38,11 +37,6 @@ BOOST_AUTO_TEST_SUITE(Nfd)
 class CommandFixture : public ControllerFixture
 {
 protected:
-  CommandFixture()
-    : succeedCallback(bind(&CommandFixture::succeed, this, _1))
-  {
-  }
-
   void
   respond(const ControlResponse& responsePayload)
   {
@@ -52,21 +46,16 @@ protected:
     this->advanceClocks(1_ms);
   }
 
-private:
-  void
-  succeed(const ControlParameters& parameters)
-  {
-    succeeds.push_back(parameters);
-  }
-
 protected:
-  Controller::CommandSucceedCallback succeedCallback;
+  Controller::CommandSucceedCallback succeedCallback = [this] (const auto& params) {
+    succeeds.push_back(params);
+  };
   std::vector<ControlParameters> succeeds;
 };
 
 // This test suite focuses on ControlCommand functionality of Controller.
-// Individual commands are tested in nfd-control-command.t.cpp
-// StatusDataset functionality is tested in nfd-status-dataset.t.cpp
+// Individual commands are tested in control-command.t.cpp
+// StatusDataset functionality is tested in status-dataset.t.cpp
 BOOST_FIXTURE_TEST_SUITE(TestController, CommandFixture)
 
 static ControlParameters

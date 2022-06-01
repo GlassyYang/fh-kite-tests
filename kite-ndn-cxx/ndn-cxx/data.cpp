@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,7 +20,6 @@
  */
 
 #include "ndn-cxx/data.hpp"
-#include "ndn-cxx/signature.hpp"
 #include "ndn-cxx/util/sha256.hpp"
 
 namespace ndn {
@@ -61,7 +60,7 @@ Data::wireEncode(EncodingImpl<TAG>& encoder, bool wantUnsignedPortionOnly) const
     if (!m_signatureInfo) {
       NDN_THROW(Error("Requested wire format, but Data has not been signed"));
     }
-    totalLength += encoder.prependBlock(m_signatureValue);
+    totalLength += prependBlock(encoder, m_signatureValue);
   }
 
   // SignatureInfo
@@ -69,7 +68,7 @@ Data::wireEncode(EncodingImpl<TAG>& encoder, bool wantUnsignedPortionOnly) const
 
   // Content
   if (hasContent()) {
-    totalLength += encoder.prependBlock(m_content);
+    totalLength += prependBlock(encoder, m_content);
   }
 
   // MetaInfo
@@ -92,10 +91,12 @@ template size_t
 Data::wireEncode<encoding::EstimatorTag>(EncodingEstimator&, bool) const;
 
 const Block&
-Data::wireEncode(EncodingBuffer& encoder, const Block& signatureValue) const
+Data::wireEncode(EncodingBuffer& encoder, span<const uint8_t> signature) const
 {
   size_t totalLength = encoder.size();
-  totalLength += encoder.appendBlock(signatureValue);
+  totalLength += encoder.appendVarNumber(tlv::SignatureValue);
+  totalLength += encoder.appendVarNumber(signature.size());
+  totalLength += encoder.appendBytes(signature);
 
   encoder.prependVarNumber(totalLength);
   encoder.prependVarNumber(tlv::Data);
@@ -210,7 +211,7 @@ Data::getFullName() const
       NDN_THROW(Error("Cannot compute full name because Data has no wire encoding (not signed)"));
     }
     m_fullName = m_name;
-    m_fullName.appendImplicitSha256Digest(util::Sha256::computeDigest(m_wire.wire(), m_wire.size()));
+    m_fullName.appendImplicitSha256Digest(util::Sha256::computeDigest(m_wire));
   }
 
   return m_fullName;
@@ -260,15 +261,21 @@ Data::setContent(const Block& block)
 }
 
 Data&
+Data::setContent(span<const uint8_t> value)
+{
+  m_content = makeBinaryBlock(tlv::Content, value);
+  resetWire();
+  return *this;
+}
+
+Data&
 Data::setContent(const uint8_t* value, size_t length)
 {
   if (value == nullptr && length != 0) {
     NDN_THROW(std::invalid_argument("Content buffer cannot be nullptr"));
   }
 
-  m_content = makeBinaryBlock(tlv::Content, value, length);
-  resetWire();
-  return *this;
+  return setContent(make_span(value, length));
 }
 
 Data&
@@ -291,25 +298,18 @@ Data::unsetContent()
   return *this;
 }
 
-Signature
-Data::getSignature() const
-{
-  return Signature(m_signatureInfo, m_signatureValue);
-}
-
 Data&
-Data::setSignature(const Signature& signature)
+Data::setSignatureInfo(const SignatureInfo& info)
 {
-  m_signatureInfo = signature.getSignatureInfo();
-  m_signatureValue = signature.getValue();
+  m_signatureInfo = info;
   resetWire();
   return *this;
 }
 
 Data&
-Data::setSignatureInfo(const SignatureInfo& info)
+Data::setSignatureValue(span<const uint8_t> value)
 {
-  m_signatureInfo = info;
+  m_signatureValue = makeBinaryBlock(tlv::SignatureValue, value);
   resetWire();
   return *this;
 }
@@ -334,8 +334,9 @@ Data::extractSignedRanges() const
 
   wireEncode();
   auto lastSignedIt = std::prev(m_wire.find(tlv::SignatureValue));
-  bufs.emplace_back(m_wire.value(),
-                    std::distance(m_wire.value_begin(), lastSignedIt->end()));
+  // Note: we assume that both iterators point to the same underlying buffer
+  bufs.emplace_back(m_wire.value_begin(), lastSignedIt->end());
+
   return bufs;
 }
 

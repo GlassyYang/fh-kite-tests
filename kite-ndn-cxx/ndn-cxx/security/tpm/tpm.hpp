@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_TPM_TPM_HPP
-#define NDN_SECURITY_TPM_TPM_HPP
+#ifndef NDN_CXX_SECURITY_TPM_TPM_HPP
+#define NDN_CXX_SECURITY_TPM_TPM_HPP
 
 #include "ndn-cxx/name.hpp"
 #include "ndn-cxx/security/key-params.hpp"
@@ -57,10 +57,10 @@ class BackEnd;
  * A TPM consists of a unified front-end interface and a back-end implementation. The front-end
  * cache the handles of private keys which is provided by the back-end implementation.
  *
- * @note Tpm instance is created and managed only by v2::KeyChain.  v2::KeyChain::getTpm()
- *       returns a const reference to the managed Tpm instance, through which it is possible to
- *       check existence of private keys, get public keys for the private keys, sign, and decrypt
- *       the supplied buffers using managed private keys.
+ * @note Tpm instance is created and managed only by KeyChain. KeyChain::getTpm() returns
+ *       a const reference to the managed Tpm instance, through which it is possible to
+ *       check the existence of private keys, get the public key corresponding to a private
+ *       key, sign, and decrypt the supplied buffers using managed private keys.
  */
 class Tpm : noncopyable
 {
@@ -104,17 +104,6 @@ public:
   sign(const InputBuffers& bufs, const Name& keyName, DigestAlgorithm digestAlgorithm) const;
 
   /**
-   * @brief Sign blob using the key with name @p keyName and using the digest @p digestAlgorithm.
-   *
-   * @return The signature, or nullptr if the key does not exist.
-   */
-  ConstBufferPtr
-  sign(const uint8_t* buf, size_t size, const Name& keyName, DigestAlgorithm digestAlgorithm) const
-  {
-    return sign({{buf, size}}, keyName, digestAlgorithm);
-  }
-
-  /**
    * @brief Verify discontiguous ranges using the key with name @p keyName and using the digest
    *        @p digestAlgorithm.
    *
@@ -122,23 +111,9 @@ public:
    * @retval false the signature is not valid
    * @retval indeterminate the key does not exist
    */
-  boost::logic::tribool
-  verify(const InputBuffers& bufs, const uint8_t* sig, size_t sigLen, const Name& keyName,
+  NDN_CXX_NODISCARD boost::logic::tribool
+  verify(const InputBuffers& bufs, span<const uint8_t> sig, const Name& keyName,
          DigestAlgorithm digestAlgorithm) const;
-
-  /**
-   * @brief Verify blob using the key with name @p keyName and using the digest @p digestAlgorithm.
-   *
-   * @retval true the signature is valid
-   * @retval false the signature is not valid
-   * @retval indeterminate the key does not exist
-   */
-  boost::logic::tribool
-  verify(const uint8_t* buf, size_t bufLen, const uint8_t* sig, size_t sigLen,
-         const Name& keyName, DigestAlgorithm digestAlgorithm) const
-  {
-    return verify({{buf, bufLen}}, sig, sigLen, keyName, digestAlgorithm);
-  }
 
   /**
    * @brief Decrypt blob using the key with name @p keyName.
@@ -146,7 +121,7 @@ public:
    * @return The decrypted data, or nullptr if the key does not exist.
    */
   ConstBufferPtr
-  decrypt(const uint8_t* buf, size_t size, const Name& keyName) const;
+  decrypt(span<const uint8_t> buf, const Name& keyName) const;
 
 public: // Management
   /**
@@ -216,6 +191,7 @@ NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
    * @param pw The password to encrypt the private key
    * @param pwLen The length of the password
    * @return The encoded private key wrapper.
+   *
    * @throw Error The key does not exist or it could not be exported.
    */
   ConstBufferPtr
@@ -224,16 +200,17 @@ NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   /**
    * @brief Import a private key.
    *
-   * @param keyName The private key name
-   * @param pkcs8 The private key wrapper
-   * @param pkcs8Len The length of the private key wrapper
-   * @param pw The password to encrypt the private key
-   * @param pwLen The length of the password
+   * Import a private key in encrypted PKCS #8 format.
+   *
+   * @param keyName The private key name.
+   * @param pkcs8 The key encoded in PKCS #8 format.
+   * @param pw The password to decrypt the private key.
+   * @param pwLen The length of the password.
+   *
    * @throw Error The key could not be imported.
    */
   void
-  importPrivateKey(const Name& keyName, const uint8_t* pkcs8, size_t pkcs8Len,
-                   const char* pw, size_t pwLen);
+  importPrivateKey(const Name& keyName, span<const uint8_t> pkcs8, const char* pw, size_t pwLen);
 
   /**
    * @brief Import a private key.
@@ -269,7 +246,7 @@ private:
 
   const unique_ptr<BackEnd> m_backEnd;
 
-  friend class v2::KeyChain;
+  friend KeyChain;
 };
 
 } // namespace tpm
@@ -279,4 +256,4 @@ using tpm::Tpm;
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_TPM_TPM_HPP
+#endif // NDN_CXX_SECURITY_TPM_TPM_HPP

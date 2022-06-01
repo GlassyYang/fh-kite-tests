@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California,
+ * Copyright (c) 2013-2021 Regents of the University of California,
  *                         Colorado State University,
  *                         University Pierre & Marie Curie, Sorbonne University.
  *
@@ -59,7 +59,7 @@ SegmentFetcher::Options::validate()
 }
 
 SegmentFetcher::SegmentFetcher(Face& face,
-                               security::v2::Validator& validator,
+                               security::Validator& validator,
                                const SegmentFetcher::Options& options)
   : m_options(options)
   , m_face(face)
@@ -76,7 +76,7 @@ SegmentFetcher::SegmentFetcher(Face& face,
 shared_ptr<SegmentFetcher>
 SegmentFetcher::start(Face& face,
                       const Interest& baseInterest,
-                      security::v2::Validator& validator,
+                      security::Validator& validator,
                       const SegmentFetcher::Options& options)
 {
   shared_ptr<SegmentFetcher> fetcher(new SegmentFetcher(face, validator, options));
@@ -239,9 +239,8 @@ SegmentFetcher::afterSegmentReceivedCb(const Interest& origInterest, const Data&
   afterSegmentReceived(data);
 
   m_validator.validate(data,
-                       bind(&SegmentFetcher::afterValidationSuccess, this, _1, origInterest,
-                            pendingSegmentIt, weakSelf),
-                       bind(&SegmentFetcher::afterValidationFailure, this, _1, _2, weakSelf));
+    [=] (const Data& d) { afterValidationSuccess(d, origInterest, pendingSegmentIt, weakSelf); },
+    [=] (const Data& d, const auto& error) { afterValidationFailure(d, error, weakSelf); });
 }
 
 void
@@ -323,8 +322,8 @@ SegmentFetcher::afterValidationSuccess(const Data& data, const Interest& origInt
 }
 
 void
-SegmentFetcher::afterValidationFailure(const Data& data,
-                                       const security::v2::ValidationError& error,
+SegmentFetcher::afterValidationFailure(const Data&,
+                                       const security::ValidationError& error,
                                        const weak_ptr<SegmentFetcher>& weakSelf)
 {
   if (shouldStop(weakSelf))

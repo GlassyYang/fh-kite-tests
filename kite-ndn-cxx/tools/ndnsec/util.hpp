@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,10 +19,11 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_TOOLS_NDNSEC_UTIL_HPP
-#define NDN_TOOLS_NDNSEC_UTIL_HPP
+#ifndef NDN_CXX_TOOLS_NDNSEC_UTIL_HPP
+#define NDN_CXX_TOOLS_NDNSEC_UTIL_HPP
 
 #include "ndn-cxx/security/key-chain.hpp"
+#include "ndn-cxx/util/io.hpp"
 
 #include <iostream>
 
@@ -45,21 +46,33 @@ namespace ndnsec {
  * @throw std::invalid_argument name is invalid.
  * @throw Pib::Error certificate does not exist.
  */
-security::v2::Certificate
+security::Certificate
 getCertificateFromPib(const security::pib::Pib& pib, const Name& name,
                       bool isIdentityName, bool isKeyName, bool isCertName);
 
-class CannotLoadCertificate : public std::runtime_error
+/**
+ * @brief Load a TLV-encoded, base64-armored object from a file named @p filename.
+ */
+template<typename T>
+T
+loadFromFile(const std::string& filename)
 {
-public:
-  CannotLoadCertificate(const std::string& msg)
-    : std::runtime_error(msg)
-  {
-  }
-};
+  try {
+    if (filename == "-") {
+      return io::loadTlv<T>(std::cin, io::BASE64);
+    }
 
-security::v2::Certificate
-loadCertificate(const std::string& fileName);
+    std::ifstream file(filename);
+    if (!file) {
+      NDN_THROW(std::runtime_error("Cannot open '" + filename + "'"));
+    }
+    return io::loadTlv<T>(file, io::BASE64);
+  }
+  catch (const io::Error& e) {
+    NDN_THROW_NESTED(std::runtime_error("Cannot load '" + filename +
+                                        "': malformed TLV or not in base64 format (" + e.what() + ")"));
+  }
+}
 
 bool
 getPassword(std::string& password, const std::string& prompt, bool shouldConfirm = true);
@@ -67,4 +80,4 @@ getPassword(std::string& password, const std::string& prompt, bool shouldConfirm
 } // namespace ndnsec
 } // namespace ndn
 
-#endif // NDN_TOOLS_NDNSEC_UTIL_HPP
+#endif // NDN_CXX_TOOLS_NDNSEC_UTIL_HPP

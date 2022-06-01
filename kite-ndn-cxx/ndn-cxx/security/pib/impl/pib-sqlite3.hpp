@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITTY_PIB_IMPL_PIB_SQLITE3_HPP
-#define NDN_SECURITTY_PIB_IMPL_PIB_SQLITE3_HPP
+#ifndef NDN_CXX_SECURITTY_PIB_IMPL_PIB_SQLITE3_HPP
+#define NDN_CXX_SECURITTY_PIB_IMPL_PIB_SQLITE3_HPP
 
 #include "ndn-cxx/security/pib/pib-impl.hpp"
 
@@ -36,7 +36,7 @@ namespace pib {
  * All the contents in Pib are stored in a SQLite3 database file.
  * This backend provides more persistent storage than PibMemory.
  */
-class PibSqlite3 : public PibImpl
+class PibSqlite3 final : public PibImpl
 {
 public:
   /**
@@ -57,7 +57,7 @@ public:
   /**
    * @brief Destruct and cleanup internal state
    */
-  ~PibSqlite3();
+  ~PibSqlite3() final;
 
   static const std::string&
   getScheme();
@@ -96,8 +96,7 @@ public: // Key management
   hasKey(const Name& keyName) const final;
 
   void
-  addKey(const Name& identity, const Name& keyName,
-         const uint8_t* key, size_t keyLen) final;
+  addKey(const Name& identity, const Name& keyName, span<const uint8_t> key) final;
 
   void
   removeKey(const Name& keyName) final;
@@ -119,12 +118,12 @@ public: // Certificate Management
   hasCertificate(const Name& certName) const final;
 
   void
-  addCertificate(const v2::Certificate& certificate) final;
+  addCertificate(const Certificate& certificate) final;
 
   void
   removeCertificate(const Name& certName) final;
 
-  v2::Certificate
+  Certificate
   getCertificate(const Name& certName) const final;
 
   std::set<Name>
@@ -133,7 +132,7 @@ public: // Certificate Management
   void
   setDefaultCertificateOfKey(const Name& keyName, const Name& certName) final;
 
-  v2::Certificate
+  Certificate
   getDefaultCertificateOfKey(const Name& keyName) const final;
 
 private:
@@ -154,4 +153,4 @@ private:
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITTY_PIB_IMPL_PIB_SQLITE3_HPP
+#endif // NDN_CXX_SECURITTY_PIB_IMPL_PIB_SQLITE3_HPP

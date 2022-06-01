@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Regents of the University of California.
+ * Copyright (c) 2014-2022,  Regents of the University of California.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -17,25 +17,23 @@
  * ndn-tools, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "ndn-dissect.hpp"
+#include "dissector.hpp"
 #include "core/version.hpp"
 
 #include <boost/program_options/options_description.hpp>
-#include <boost/program_options/variables_map.hpp>
 #include <boost/program_options/parsers.hpp>
+#include <boost/program_options/variables_map.hpp>
 
 #include <fstream>
 
+namespace ndn::dissect {
+
 namespace po = boost::program_options;
 
-namespace ndn {
-namespace dissect {
-
 static void
-usage(std::ostream& os, const std::string& appName, const po::options_description& options)
+usage(std::ostream& os, std::string_view programName, const po::options_description& options)
 {
-  os << "Usage:\n"
-     << "  " << appName << " [input-file] \n"
+  os << "Usage: " << programName << " [options] [input-file]\n"
      << "\n"
      << options;
 }
@@ -43,39 +41,33 @@ usage(std::ostream& os, const std::string& appName, const po::options_descriptio
 static int
 main(int argc, char* argv[])
 {
-  po::options_description visibleOptions;
+  Options options;
+  std::string inputFileName;
+
+  po::options_description visibleOptions("Options");
   visibleOptions.add_options()
-    ("help,h", "Print help and exit.")
-    ("version,V", "Print version and exit.")
+    ("help,h",    "print this help message and exit")
+    ("content,c", po::bool_switch(&options.dissectContent), "dissect the value of Content elements")
+    ("version,V", "print program version and exit")
     ;
 
-  std::string inputFileName;
   po::options_description hiddenOptions;
   hiddenOptions.add_options()
     ("input-file", po::value<std::string>(&inputFileName));
-  ;
-  po::positional_options_description positionalArguments;
-  positionalArguments
-    .add("input-file", -1);
 
   po::options_description allOptions;
-  allOptions
-    .add(visibleOptions)
-    .add(hiddenOptions)
-    ;
+  allOptions.add(visibleOptions).add(hiddenOptions);
+
+  po::positional_options_description pos;
+  pos.add("input-file", -1);
 
   po::variables_map vm;
   try {
-    po::store(po::command_line_parser(argc, argv)
-                .options(allOptions)
-                .positional(positionalArguments)
-                .run(),
-              vm);
+    po::store(po::command_line_parser(argc, argv).options(allOptions).positional(pos).run(), vm);
     po::notify(vm);
   }
   catch (const po::error& e) {
-    std::cerr << "ERROR: " << e.what() << std::endl << std::endl;
-    usage(std::cerr, argv[0], visibleOptions);
+    std::cerr << "ERROR: " << e.what() << "\n";
     return 2;
   }
 
@@ -85,33 +77,28 @@ main(int argc, char* argv[])
   }
 
   if (vm.count("version") > 0) {
-    std::cout << "ndn-dissect " << tools::VERSION << std::endl;
+    std::cout << "ndn-dissect " << tools::VERSION << "\n";
     return 0;
   }
 
   std::ifstream inputFile;
-  std::istream* inputStream;
-
+  std::istream* inputStream = &std::cin;
   if (vm.count("input-file") > 0 && inputFileName != "-") {
     inputFile.open(inputFileName);
-    if (!inputFile.is_open()) {
-      std::cerr << argv[0] << ": " << inputFileName << ": File does not exist or is unreadable" << std::endl;
+    if (!inputFile) {
+      std::cerr << argv[0] << ": " << inputFileName << ": File does not exist or is unreadable\n";
       return 3;
     }
     inputStream = &inputFile;
   }
-  else {
-    inputStream = &std::cin;
-  }
 
-  NdnDissect program;
-  program.dissect(std::cout, *inputStream);
+  Dissector d(*inputStream, std::cout, options);
+  d.dissect();
 
   return 0;
 }
 
-} // namespace dissect
-} // namespace ndn
+} // namespace ndn::dissect
 
 int
 main(int argc, char* argv[])

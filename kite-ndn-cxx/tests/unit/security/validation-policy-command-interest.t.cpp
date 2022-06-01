@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,13 +20,12 @@
  */
 
 #include "ndn-cxx/security/validation-policy-command-interest.hpp"
-#include "ndn-cxx/security/command-interest-signer.hpp"
-#include "ndn-cxx/security/signing-helpers.hpp"
+
+#include "ndn-cxx/security/interest-signer.hpp"
 #include "ndn-cxx/security/validation-policy-accept-all.hpp"
 #include "ndn-cxx/security/validation-policy-simple-hierarchy.hpp"
 
-#include "tests/boost-test.hpp"
-#include "tests/make-interest-data.hpp"
+#include "tests/test-common.hpp"
 #include "tests/unit/security/validator-fixture.hpp"
 
 #include <boost/lexical_cast.hpp>
@@ -65,17 +64,11 @@ template<class T, class InnerPolicy = ValidationPolicySimpleHierarchy>
 class ValidationPolicyCommandInterestFixture : public HierarchicalValidatorFixture<CommandInterestPolicyWrapper<T, InnerPolicy>>
 {
 public:
-  ValidationPolicyCommandInterestFixture()
-    : m_signer(this->m_keyChain)
-  {
-  }
-
   Interest
   makeCommandInterest(const Identity& identity, bool wantV3 = false)
   {
     if (wantV3) {
       Interest i(Name(identity.getName()).append("CMD"));
-      i.setCanBePrefix(false);
       m_signer.makeSignedInterest(i, signingByIdentity(identity));
       return i;
     }
@@ -86,7 +79,7 @@ public:
   }
 
 public:
-  CommandInterestSigner m_signer;
+  InterestSigner m_signer{this->m_keyChain};
 };
 
 BOOST_FIXTURE_TEST_SUITE(TestValidationPolicyCommandInterest,
@@ -119,7 +112,6 @@ BOOST_AUTO_TEST_CASE(BasicV3)
   VALIDATE_SUCCESS(i2, "Should succeed (timestamp larger than previous)");
 
   Interest i3(Name(identity.getName()).append("CMD"));
-  i3.setCanBePrefix(false);
   m_signer.makeSignedInterest(i3, signingWithSha256());
   VALIDATE_FAILURE(i3, "Should fail (Sha256 signature violates policy)");
 }
@@ -182,7 +174,7 @@ BOOST_AUTO_TEST_CASE(BadKeyLocatorType)
 {
   auto i1 = makeCommandInterest(identity);
   KeyLocator kl;
-  kl.setKeyDigest(makeBinaryBlock(tlv::KeyDigest, "\xDD\xDD\xDD\xDD\xDD\xDD\xDD\xDD", 8));
+  kl.setKeyDigest(makeBinaryBlock(tlv::KeyDigest, {0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD}));
   SignatureInfo sigInfo(tlv::SignatureSha256WithRsa);
   sigInfo.setKeyLocator(kl);
   setNameComponent(i1, command_interest::POS_SIG_INFO,
@@ -239,7 +231,7 @@ BOOST_FIXTURE_TEST_CASE(TimestampOutOfGraceNegative, ValidationPolicyCommandInte
   advanceClocks(1_s);
   auto i3 = makeCommandInterest(identity); // signed at +2s
 
-  systemClock->advance(-18_s); // verifying at -16s
+  m_systemClock->advance(-18_s); // verifying at -16s
   VALIDATE_FAILURE(i1, "Should fail (timestamp outside the grace period)");
   rewindClockAfterValidation();
 
@@ -277,11 +269,11 @@ BOOST_AUTO_TEST_CASE(TimestampReorderNegative)
   advanceClocks(300_ms);
   auto i4 = makeCommandInterest(identity); // signed at +1400ms
 
-  systemClock->advance(-300_ms); // verifying at +1100ms
+  m_systemClock->advance(-300_ms); // verifying at +1100ms
   VALIDATE_SUCCESS(i1, "Should succeed");
   rewindClockAfterValidation();
 
-  systemClock->advance(-1100_ms); // verifying at 0ms
+  m_systemClock->advance(-1100_ms); // verifying at 0ms
   VALIDATE_FAILURE(i2, "Should fail (timestamp reordered)");
   rewindClockAfterValidation();
 
@@ -400,7 +392,7 @@ public:
 BOOST_FIXTURE_TEST_CASE(UnlimitedRecords, ValidationPolicyCommandInterestFixture<UnlimitedRecordsOptions>)
 {
   std::vector<Identity> identities;
-  for (int i = 0; i < 20; ++i) {
+  for (size_t i = 0; i < 20; ++i) {
     Identity id = this->addSubCertificate("/Security/ValidatorFixture/Sub" + to_string(i), identity);
     this->cache.insert(id.getDefaultKey().getDefaultCertificate());
     identities.push_back(id);
@@ -408,7 +400,7 @@ BOOST_FIXTURE_TEST_CASE(UnlimitedRecords, ValidationPolicyCommandInterestFixture
 
   auto i1 = makeCommandInterest(identities.at(0)); // signed at 0s
   advanceClocks(1_s);
-  for (int i = 0; i < 20; ++i) {
+  for (size_t i = 0; i < 20; ++i) {
     auto i2 = makeCommandInterest(identities.at(i)); // signed at +1s
 
     VALIDATE_SUCCESS(i2, "Should succeed");
@@ -462,7 +454,7 @@ BOOST_FIXTURE_TEST_CASE(LimitedRecordLifetime, ValidationPolicyCommandInterestFi
   advanceClocks(120_s);
   auto i3 = makeCommandInterest(identity); // signed at +360s
 
-  systemClock->advance(-360_s); // rewind system clock to 0s
+  m_systemClock->advance(-360_s); // rewind system clock to 0s
   VALIDATE_SUCCESS(i1, "Should succeed");
   rewindClockAfterValidation();
 

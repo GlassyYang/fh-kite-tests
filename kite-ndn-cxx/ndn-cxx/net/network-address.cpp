@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -23,6 +23,10 @@
 
 #include "ndn-cxx/net/network-address.hpp"
 
+#ifdef __linux__
+#include <linux/if_addr.h>
+#endif
+
 namespace ndn {
 namespace net {
 
@@ -43,8 +47,8 @@ operator<<(std::ostream& os, AddressScope scope)
 }
 
 NetworkAddress::NetworkAddress(AddressFamily family,
-                               boost::asio::ip::address ip,
-                               boost::asio::ip::address broadcast,
+                               const boost::asio::ip::address& ip,
+                               const boost::asio::ip::address& broadcast,
                                uint8_t prefixLength,
                                AddressScope scope,
                                uint32_t flags)
@@ -55,6 +59,18 @@ NetworkAddress::NetworkAddress(AddressFamily family,
   , m_scope(scope)
   , m_flags(flags)
 {
+}
+
+bool
+NetworkAddress::isDeprecated() const
+{
+#ifdef __linux__
+  return m_flags & IFA_F_DEPRECATED;
+#else
+  // should probably check for IN6_IFF_DEPRECATED on macOS and FreeBSD, but the
+  // NetworkMonitor backend for those platforms doesn't provide any address flags
+  return false;
+#endif
 }
 
 std::ostream&

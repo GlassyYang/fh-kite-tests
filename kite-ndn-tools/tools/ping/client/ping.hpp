@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2015-2019,  Arizona Board of Regents.
+ * Copyright (c) 2015-2022,  Arizona Board of Regents.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -26,14 +26,14 @@
 
 #include "core/common.hpp"
 
-namespace ndn {
-namespace ping {
-namespace client {
+#include <ndn-cxx/util/signal.hpp>
 
-typedef time::duration<double, time::milliseconds::period> Rtt;
+namespace ndn::ping::client {
+
+using Rtt = time::duration<double, time::milliseconds::period>;
 
 /**
- * @brief options for ndnping client
+ * @brief %Options for ndnping client.
  */
 struct Options
 {
@@ -62,7 +62,7 @@ public:
    * @param seq ping sequence number
    * @param rtt round trip time
    */
-  signal::Signal<Ping, uint64_t, Rtt> afterData;
+  util::Signal<Ping, uint64_t, Rtt> afterData;
 
   /**
    * @brief Signals on the return of a Nack
@@ -71,19 +71,19 @@ public:
    * @param rtt round trip time
    * @param header the received Network NACK header
    */
-  signal::Signal<Ping, uint64_t, Rtt, lp::NackHeader> afterNack;
+  util::Signal<Ping, uint64_t, Rtt, lp::NackHeader> afterNack;
 
   /**
    * @brief Signals on timeout of a packet
    *
    * @param seq ping sequence number
    */
-  signal::Signal<Ping, uint64_t> afterTimeout;
+  util::Signal<Ping, uint64_t> afterTimeout;
 
   /**
    * @brief Signals when finished pinging
    */
-  signal::Signal<Ping> afterFinish;
+  util::Signal<Ping> afterFinish;
 
   /**
    * @brief Start sending ping interests
@@ -106,8 +106,6 @@ public:
 private:
   /**
    * @brief Creates a ping Name from the sequence number
-   *
-   * @param seq ping sequence number
    */
   Name
   makePingName(uint64_t seq) const;
@@ -120,30 +118,18 @@ private:
 
   /**
    * @brief Called when a Data packet is received in response to a ping
-   *
-   * @param seq ping sequence number
-   * @param sendTime time ping sent
    */
   void
-  onData(uint64_t seq, const time::steady_clock::TimePoint& sendTime);
+  onData(uint64_t seq, const time::steady_clock::time_point& sendTime);
 
   /**
    * @brief Called when a Nack is received in response to a ping
-   *
-   * @param interest NDN interest
-   * @param nack returned nack
-   * @param seq ping sequence number
-   * @param sendTime time ping sent
    */
   void
-  onNack(const lp::Nack& nack, uint64_t seq,
-         const time::steady_clock::TimePoint& sendTime);
+  onNack(uint64_t seq, const time::steady_clock::time_point& sendTime, const lp::Nack& nack);
 
   /**
    * @brief Called when ping timed out
-   *
-   * @param interest NDN interest
-   * @param seq ping sequence number
    */
   void
   onTimeout(uint64_t seq);
@@ -156,16 +142,14 @@ private:
 
 private:
   const Options& m_options;
-  int m_nSent;
+  int m_nSent = 0;
   uint64_t m_nextSeq;
-  int m_nOutstanding;
+  int m_nOutstanding = 0;
   Face& m_face;
   Scheduler m_scheduler;
   scheduler::ScopedEventId m_nextPingEvent;
 };
 
-} // namespace client
-} // namespace ping
-} // namespace ndn
+} // namespace ndn::ping::client
 
 #endif // NDN_TOOLS_PING_CLIENT_PING_HPP

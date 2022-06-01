@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2011-2019, Regents of the University of California.
+ * Copyright (c) 2011-2022, Regents of the University of California.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -34,12 +34,12 @@
 #include <ndn-cxx/lp/nack.hpp>
 #include <ndn-cxx/lp/packet.hpp>
 #include <ndn-cxx/net/ethernet.hpp>
+#include <ndn-cxx/util/scope.hpp>
 #include <ndn-cxx/util/string-helper.hpp>
 
 #include <boost/endian/conversion.hpp>
 
-namespace ndn {
-namespace dump {
+namespace ndn::dump {
 
 namespace endian = boost::endian;
 
@@ -96,13 +96,18 @@ NdnDump::run()
   char errbuf[PCAP_ERRBUF_SIZE] = {};
 
   if (inputFile.empty() && interface.empty()) {
-    const char* defaultDevice = pcap_lookupdev(errbuf);
+    pcap_if_t* allDevs = nullptr;
+    int res = pcap_findalldevs(&allDevs, errbuf);
+    auto freealldevs = ndn::make_scope_exit([=] { pcap_freealldevs(allDevs); });
 
-    if (defaultDevice == nullptr) {
+    if (res != 0) {
       NDN_THROW(Error(errbuf));
     }
+    if (allDevs == nullptr) {
+      NDN_THROW(Error("No network interface found"));
+    }
 
-    interface = defaultDevice;
+    interface = allDevs->name;
   }
 
   std::string action;
@@ -151,9 +156,9 @@ NdnDump::run()
     if (res < 0) {
       NDN_THROW(Error("Cannot compile pcap filter '" + pcapFilter + "': " + pcap_geterr(m_pcap)));
     }
+    auto freecode = ndn::make_scope_exit([&] { pcap_freecode(&program); });
 
     res = pcap_setfilter(m_pcap, &program);
-    pcap_freecode(&program);
     if (res < 0) {
       NDN_THROW(Error("Cannot set pcap filter: "s + pcap_geterr(m_pcap)));
     }
@@ -201,8 +206,7 @@ NdnDump::printPacket(const pcap_pkthdr* pkthdr, const uint8_t* payload) const
     shouldPrint = printPpp(out, payload, pkthdr->len);
     break;
   default:
-    BOOST_ASSERT(false);
-    return;
+    NDN_CXX_UNREACHABLE;
   }
 
   if (shouldPrint) {
@@ -214,9 +218,9 @@ NdnDump::printPacket(const pcap_pkthdr* pkthdr, const uint8_t* payload) const
 }
 
 void
-NdnDump::printTimestamp(std::ostream& os, const timeval& tv) const
+NdnDump::printTimestamp(std::ostream& os, const timeval& tv)
 {
-  /// \todo Add more timestamp formats (time since previous packet, time since first packet, ...)
+  // TODO: Add more timestamp formats (time since previous packet, time since first packet, ...)
   os << tv.tv_sec
      << "."
      << std::setfill('0') << std::setw(6) << tv.tv_usec
@@ -512,9 +516,7 @@ NdnDump::printNdn(OutputFormatter& out, const uint8_t* pkt, size_t len) const
   }
   out.addDelimiter();
 
-  bool isOk = false;
-  Block block;
-  std::tie(isOk, block) = Block::fromBuffer(pkt, len);
+  auto [isOk, block] = Block::fromBuffer({pkt, len});
   if (!isOk) {
     // if packet is incomplete, we will not be able to process it
     out << "NDN truncated packet, length " << len;
@@ -534,17 +536,13 @@ NdnDump::printNdn(OutputFormatter& out, const uint8_t* pkt, size_t len) const
       return true;
     }
 
-    Buffer::const_iterator begin, end;
-    if (lpPacket.has<lp::FragmentField>()) {
-      std::tie(begin, end) = lpPacket.get<lp::FragmentField>();
-    }
-    else {
+    if (!lpPacket.has<lp::FragmentField>()) {
       out << " idle";
       return true;
     }
 
-    bool isOk = false;
-    std::tie(isOk, netPacket) = Block::fromBuffer(&*begin, std::distance(begin, end));
+    auto [begin, end] = lpPacket.get<lp::FragmentField>();
+    std::tie(isOk, netPacket) = Block::fromBuffer({begin, end});
     if (!isOk) {
       // if network packet is fragmented, we will not be able to process it
       out << " fragment";
@@ -606,5 +604,4 @@ NdnDump::matchesFilter(const Name& name) const
   return std::regex_match(name.toUri(), *nameFilter);
 }
 
-} // namespace dump
-} // namespace ndn
+} // namespace ndn::dump

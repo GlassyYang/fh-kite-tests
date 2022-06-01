@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_MGMT_DISPATCHER_HPP
-#define NDN_MGMT_DISPATCHER_HPP
+#ifndef NDN_CXX_MGMT_DISPATCHER_HPP
+#define NDN_CXX_MGMT_DISPATCHER_HPP
 
 #include "ndn-cxx/face.hpp"
 #include "ndn-cxx/encoding/block.hpp"
@@ -270,24 +270,21 @@ public: // NotificationStream
   addNotificationStream(const PartialName& relPrefix);
 
 private:
-  typedef std::function<void(const Name& prefix,
-                             const Interest& interest)> InterestHandler;
+  using InterestHandler = std::function<void(const Name& prefix, const Interest&)>;
 
-  typedef std::function<void(const std::string& requester,
-                             const Name& prefix,
-                             const Interest& interest,
-                             const shared_ptr<ControlParameters>&)> AuthorizationAcceptedCallback;
+  using AuthorizationAcceptedCallback = std::function<void(const std::string& requester,
+                                                           const Name& prefix,
+                                                           const Interest&,
+                                                           const shared_ptr<ControlParameters>&)>;
 
-  typedef std::function<void(RejectReply act,
-                             const Interest& interest)> AuthorizationRejectedCallback;
+  using AuthorizationRejectedCallback = std::function<void(RejectReply, const Interest&)>;
 
   /**
-   * @brief the parser of extracting control parameters from name component.
-   * @param comp name component that may encode control parameters.
-   * @return a shared pointer to the extracted control parameters.
-   * @throw tlv::Error if the NameComponent cannot be parsed as ControlParameters
+   * @brief the parser for extracting control parameters from a name component.
+   * @return a shared pointer to the extracted ControlParameters.
+   * @throw tlv::Error if the name component cannot be parsed as ControlParameters
    */
-  typedef std::function<shared_ptr<ControlParameters>(const name::Component& comp)> ControlParametersParser;
+  using ControlParametersParser = std::function<shared_ptr<ControlParameters>(const name::Component&)>;
 
   bool
   isOverlappedWithOthers(const PartialName& relPrefix) const;
@@ -323,21 +320,20 @@ private:
    * @brief send data to the face and/or in-memory storage
    *
    * Create a Data packet with the given @p dataName, @p content, and @p metaInfo,
-   * set its FreshnessPeriod to DEFAULT_FRESHNESS_PERIOD, and then send it out through
-   * the face and/or insert it into the in-memory storage as specified in @p destination.
+   * set its FreshnessPeriod to 1 second, and then send it out through the face
+   * and/or insert it into the in-memory storage as specified by @p destination.
    *
    * If it's toward the in-memory storage, set its CachePolicy to NO_CACHE and limit
-   * its FreshnessPeriod in the storage to @p imsFresh.
+   * its FreshnessPeriod in the storage to 1 second.
    *
    * @param dataName the name of this piece of data
    * @param content the content of this piece of data
    * @param metaInfo some meta information of this piece of data
    * @param destination where to send this piece of data
-   * @param imsFresh freshness period of this piece of data in in-memory storage
    */
   void
   sendData(const Name& dataName, const Block& content, const MetaInfo& metaInfo,
-           SendDestination destination, time::milliseconds imsFresh);
+           SendDestination destination);
 
   /**
    * @brief send out a data packt through the face
@@ -405,16 +401,14 @@ private:
                                const AuthorizationRejectedCallback& rejected);
 
   /**
-   * @brief process the authorized status-dataset request
+   * @brief process the authorized StatusDataset request
    *
-   * @param requester the requester
    * @param prefix the top-level prefix
    * @param interest the incoming Interest
-   * @param handler to process this request
+   * @param handler function to process this request
    */
   void
-  processAuthorizedStatusDatasetInterest(const std::string& requester,
-                                         const Name& prefix,
+  processAuthorizedStatusDatasetInterest(const Name& prefix,
                                          const Interest& interest,
                                          const StatusDatasetHandler& handler);
 
@@ -423,12 +417,10 @@ private:
    *
    * @param dataName the name of this piece of data
    * @param content the content of this piece of data
-   * @param imsFresh the freshness period of this piece of data in the in-memory storage
    * @param isFinalBlock indicates whether this piece of data is the final block
    */
   void
-  sendStatusDatasetSegment(const Name& dataName, const Block& content,
-                           time::milliseconds imsFresh, bool isFinalBlock);
+  sendStatusDatasetSegment(const Name& dataName, const Block& content, bool isFinalBlock);
 
   void
   postNotification(const Block& notification, const PartialName& relPrefix);
@@ -469,23 +461,27 @@ Dispatcher::addControlCommand(const PartialName& relPrefix,
     NDN_THROW(std::out_of_range("relPrefix overlaps with another relPrefix"));
   }
 
-  auto parser = [] (const name::Component& comp) -> shared_ptr<ControlParameters> {
+  ControlParametersParser parser = [] (const name::Component& comp) -> shared_ptr<ControlParameters> {
     return make_shared<CP>(comp.blockFromValue());
   };
+  AuthorizationAcceptedCallback accepted = [this, validate = std::move(validate),
+                                            handle = std::move(handle)] (auto&&... args) {
+    processAuthorizedControlCommandInterest(std::forward<decltype(args)>(args)..., validate, handle);
+  };
+  AuthorizationRejectedCallback rejected = [this] (auto&&... args) {
+    afterAuthorizationRejected(std::forward<decltype(args)>(args)...);
+  };
 
-  AuthorizationAcceptedCallback accepted =
-    bind(&Dispatcher::processAuthorizedControlCommandInterest, this,
-         _1, _2, _3, _4, std::move(validate), std::move(handle));
-
-  AuthorizationRejectedCallback rejected =
-    bind(&Dispatcher::afterAuthorizationRejected, this, _1, _2);
-
-  m_handlers[relPrefix] = bind(&Dispatcher::processControlCommandInterest, this,
-                               _1, relPrefix, _2, std::move(parser), std::move(authorize),
-                               std::move(accepted), std::move(rejected));
+  m_handlers[relPrefix] = [this, relPrefix,
+                           parser = std::move(parser),
+                           authorize = std::move(authorize),
+                           accepted = std::move(accepted),
+                           rejected = std::move(rejected)] (const auto& prefix, const auto& interest) {
+    processControlCommandInterest(prefix, relPrefix, interest, parser, authorize, accepted, rejected);
+  };
 }
 
 } // namespace mgmt
 } // namespace ndn
 
-#endif // NDN_MGMT_DISPATCHER_HPP
+#endif // NDN_CXX_MGMT_DISPATCHER_HPP

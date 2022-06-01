@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -46,6 +46,13 @@ BOOST_AUTO_TEST_CASE(ThreadLocalEngine)
   BOOST_CHECK_EQUAL(r1, r3);
 }
 
+// RAND_get_rand_method() and RAND_set_rand_method() are deprecated in OpenSSL 3.0
+// and there is no straightforward replacement. Suppress the warnings for now, but
+// we may have to drop this test case when OpenSSL removes the RAND_METHOD API.
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 // This fixture uses OpenSSL routines to set a dummy random generator that always fails
 class FailRandMethodFixture
 {
@@ -68,18 +75,11 @@ public:
   }
 
 private: // RAND_METHOD callbacks
-#if OPENSSL_VERSION_NUMBER < 0x1010000fL
-  static void
-  seed(const void* buf, int num)
-  {
-  }
-#else
   static int
   seed(const void* buf, int num)
   {
     return 0;
   }
-#endif // OPENSSL_VERSION_NUMBER < 0x1010000fL
 
   static int
   bytes(unsigned char* buf, int num)
@@ -92,18 +92,11 @@ private: // RAND_METHOD callbacks
   {
   }
 
-#if OPENSSL_VERSION_NUMBER < 0x1010000fL
-  static void
-  add(const void* buf, int num, double entropy)
-  {
-  }
-#else
   static int
   add(const void* buf, int num, double entropy)
   {
     return 0;
   }
-#endif // OPENSSL_VERSION_NUMBER < 0x1010000fL
 
   static int
   pseudorand(unsigned char* buf, int num)
@@ -124,8 +117,8 @@ private:
 
 BOOST_FIXTURE_TEST_CASE(Error, FailRandMethodFixture)
 {
-  std::array<uint8_t, 1024> buf;
-  BOOST_CHECK_THROW(random::generateSecureBytes(buf.data(), buf.size()), std::runtime_error);
+  std::array<uint8_t, 512> buf;
+  BOOST_CHECK_THROW(random::generateSecureBytes(buf), std::runtime_error);
 }
 
 BOOST_AUTO_TEST_SUITE_END() // TestRandom

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -21,8 +21,9 @@
 
 #include "ndn-cxx/key-locator.hpp"
 #include "ndn-cxx/encoding/block-helpers.hpp"
-#include "ndn-cxx/util/overload.hpp"
 #include "ndn-cxx/util/string-helper.hpp"
+
+#include <boost/hana/functional/overload.hpp>
 
 namespace ndn {
 
@@ -33,7 +34,7 @@ BOOST_CONCEPT_ASSERT((WireDecodable<KeyLocator>));
 static_assert(std::is_base_of<tlv::Error, KeyLocator::Error>::value,
               "KeyLocator::Error must inherit from tlv::Error");
 
-const size_t MAX_KEY_DIGEST_OCTETS_TO_SHOW = 5;
+const size_t MAX_KEY_DIGEST_OCTETS_TO_SHOW = 8;
 
 KeyLocator::KeyLocator() = default;
 
@@ -56,10 +57,10 @@ KeyLocator::wireEncode(EncodingImpl<TAG>& encoder) const
 
   size_t totalLength = 0;
 
-  auto visitor = overload(
+  auto visitor = boost::hana::overload(
     []  (monostate)           {}, // nothing to encode, TLV-VALUE is empty
     [&] (const Name& name)    { totalLength += name.wireEncode(encoder); },
-    [&] (const Block& digest) { totalLength += encoder.prependBlock(digest); },
+    [&] (const Block& digest) { totalLength += prependBlock(encoder, digest); },
     []  (uint32_t type)       { NDN_THROW(Error("Unsupported KeyLocator type " + to_string(type))); });
   visit(visitor, m_locator);
 
@@ -184,7 +185,7 @@ KeyLocator&
 KeyLocator::setKeyDigest(const ConstBufferPtr& keyDigest)
 {
   BOOST_ASSERT(keyDigest != nullptr);
-  m_locator = makeBinaryBlock(tlv::KeyDigest, keyDigest->data(), keyDigest->size());
+  m_locator = makeBinaryBlock(tlv::KeyDigest, *keyDigest);
   m_wire.reset();
   return *this;
 }
@@ -192,7 +193,7 @@ KeyLocator::setKeyDigest(const ConstBufferPtr& keyDigest)
 std::ostream&
 operator<<(std::ostream& os, const KeyLocator& keyLocator)
 {
-  auto visitor = overload(
+  auto visitor = boost::hana::overload(
     [&] (monostate) {
       os << "None";
     },
@@ -201,7 +202,7 @@ operator<<(std::ostream& os, const KeyLocator& keyLocator)
     },
     [&] (const Block& digest) {
       os << "KeyDigest=";
-      printHex(os, digest.value(), std::min(digest.value_size(), MAX_KEY_DIGEST_OCTETS_TO_SHOW));
+      printHex(os, {digest.value(), std::min(digest.value_size(), MAX_KEY_DIGEST_OCTETS_TO_SHOW)});
       if (digest.value_size() > MAX_KEY_DIGEST_OCTETS_TO_SHOW) {
         os << "...";
       }

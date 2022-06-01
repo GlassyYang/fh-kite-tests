@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_UTIL_SEGMENT_FETCHER_HPP
-#define NDN_UTIL_SEGMENT_FETCHER_HPP
+#ifndef NDN_CXX_UTIL_SEGMENT_FETCHER_HPP
+#define NDN_CXX_UTIL_SEGMENT_FETCHER_HPP
 
 #include "ndn-cxx/face.hpp"
 #include "ndn-cxx/security/validator.hpp"
@@ -71,24 +71,11 @@ namespace util {
  * been successfully validated, #afterSegmentValidated will be signaled.
  *
  * Example:
- *     @code
- *     void
- *     afterFetchComplete(ConstBufferPtr data)
- *     {
- *       ...
- *     }
- *
- *     void
- *     afterFetchError(uint32_t errorCode, const std::string& errorMsg)
- *     {
- *       ...
- *     }
- *
- *     ...
- *     auto fetcher = SegmentFetcher::start(face, Interest("/data/prefix"), validator);
- *     fetcher->onComplete.connect(bind(&afterFetchComplete, this, _1));
- *     fetcher->onError.connect(bind(&afterFetchError, this, _1, _2));
- *     @endcode
+ * @code
+ *   auto fetcher = SegmentFetcher::start(face, Interest("/data/prefix"), validator);
+ *   fetcher->onComplete.connect([] (ConstBufferPtr data) {...});
+ *   fetcher->onError.connect([] (uint32_t errorCode, const std::string& errorMsg) {...});
+ * @endcode
  */
 class SegmentFetcher : noncopyable
 {
@@ -161,7 +148,7 @@ public:
   static shared_ptr<SegmentFetcher>
   start(Face& face,
         const Interest& baseInterest,
-        security::v2::Validator& validator,
+        security::Validator& validator,
         const Options& options = Options());
 
   /**
@@ -175,7 +162,7 @@ public:
 private:
   class PendingSegment;
 
-  SegmentFetcher(Face& face, security::v2::Validator& validator, const Options& options);
+  SegmentFetcher(Face& face, security::Validator& validator, const Options& options);
 
   static bool
   shouldStop(const weak_ptr<SegmentFetcher>& weakSelf);
@@ -200,7 +187,7 @@ private:
 
   void
   afterValidationFailure(const Data& data,
-                         const security::v2::ValidationError& error,
+                         const security::ValidationError& error,
                          const weak_ptr<SegmentFetcher>& weakSelf);
 
   void
@@ -310,7 +297,7 @@ NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   Options m_options;
   Face& m_face;
   Scheduler m_scheduler;
-  security::v2::Validator& m_validator;
+  security::Validator& m_validator;
   RttEstimator m_rttEstimator;
 
   time::steady_clock::TimePoint m_timeLastSegmentReceived;
@@ -336,4 +323,4 @@ NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PRIVATE:
 } // namespace util
 } // namespace ndn
 
-#endif // NDN_UTIL_SEGMENT_FETCHER_HPP
+#endif // NDN_CXX_UTIL_SEGMENT_FETCHER_HPP

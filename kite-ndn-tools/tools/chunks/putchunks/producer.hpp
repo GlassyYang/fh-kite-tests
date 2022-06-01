@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2016-2019, Regents of the University of California,
+ * Copyright (c) 2016-2022, Regents of the University of California,
  *                          Colorado State University,
  *                          University Pierre & Marie Curie, Sorbonne University.
  *
@@ -32,15 +32,14 @@
 
 #include "core/common.hpp"
 
-namespace ndn {
-namespace chunks {
+namespace ndn::chunks {
 
 /**
  * @brief Segmented & versioned data publisher
  *
- * Packetizes and publishes data from an input stream under /prefix/<version>/<segment number>.
- * The current time is used as the version number. The store has always at least one element (also
- * with empty input stream).
+ * Packetizes and publishes data from an input stream as `/prefix/<version>/<segment number>`.
+ * Unless another value is provided, the current time is used as the version number.
+ * The packet store always has at least one item, even when the input is empty.
  */
 class Producer : noncopyable
 {
@@ -48,8 +47,8 @@ public:
   struct Options
   {
     security::SigningInfo signingInfo;
-    time::milliseconds freshnessPeriod{10000};
-    size_t maxSegmentSize = MAX_NDN_PACKET_SIZE >> 1;
+    time::milliseconds freshnessPeriod = 10_s;
+    size_t maxSegmentSize = 8000;
     bool isQuiet = false;
     bool isVerbose = false;
     bool wantShowVersion = false;
@@ -57,8 +56,7 @@ public:
 
 public:
   /**
-   * @brief Create the Producer
-   *
+   * @brief Create the producer
    * @param prefix prefix used to publish data; if the last component is not a valid
    *               version number, the current system time is used as version number.
    */
@@ -66,7 +64,7 @@ public:
            const Options& opts);
 
   /**
-   * @brief Run the Producer
+   * @brief Run the producer
    */
   void
   run();
@@ -75,10 +73,10 @@ private:
   /**
    * @brief Split the input stream in data packets and save them to the store
    *
-   * Create data packets reading all the characters from the input stream until EOF, or an
-   * error occurs. Each data packet has a maximum payload size of m_maxSegmentSize value and is
-   * stored inside the vector m_store. An empty data packet is created and stored if the input
-   * stream is empty.
+   * Create data packets reading all the characters from the input stream until EOF or an
+   * error occurs. Each data packet has a maximum payload size of `m_options.maxSegmentSize`
+   * bytes and is stored in the vector `m_store`. An empty data packet is created and stored
+   * if the input stream is empty.
    *
    * @return Number of data packets contained in the store after the operation
    */
@@ -97,9 +95,6 @@ private:
   void
   processSegmentInterest(const Interest& interest);
 
-  void
-  onRegisterFailed(const Name& prefix, const std::string& reason);
-
 PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   std::vector<shared_ptr<Data>> m_store;
 
@@ -111,7 +106,6 @@ private:
   const Options m_options;
 };
 
-} // namespace chunks
-} // namespace ndn
+} // namespace ndn::chunks
 
 #endif // NDN_TOOLS_CHUNKS_PUTCHUNKS_PRODUCER_HPP

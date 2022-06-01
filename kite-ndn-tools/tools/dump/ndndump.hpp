@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2011-2019, Regents of the University of California.
+ * Copyright (c) 2011-2022, Regents of the University of California.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -37,8 +37,7 @@
 #define UH_LEN len
 #endif
 
-namespace ndn {
-namespace dump {
+namespace ndn::dump {
 
 class OutputFormatter;
 
@@ -59,15 +58,15 @@ public:
   void
   printPacket(const pcap_pkthdr* pkthdr, const uint8_t* payload) const;
 
-  static constexpr const char*
+  static constexpr std::string_view
   getDefaultPcapFilter() noexcept
   {
     return "(ether proto 0x8624) or (tcp port 6363) or (udp port 6363) or (udp port 56363)";
   }
 
 private:
-  void
-  printTimestamp(std::ostream& os, const timeval& tv) const;
+  static void
+  printTimestamp(std::ostream& os, const timeval& tv);
 
   bool
   dispatchByEtherType(OutputFormatter& out, const uint8_t* pkt, size_t len, uint16_t etherType) const;
@@ -99,14 +98,14 @@ private:
   bool
   printNdn(OutputFormatter& out, const uint8_t* pkt, size_t len) const;
 
-  bool
+  [[nodiscard]] bool
   matchesFilter(const Name& name) const;
 
 public: // options
   std::string interface;
   std::string inputFile;
-  std::string pcapFilter = getDefaultPcapFilter();
-  optional<std::regex> nameFilter;
+  std::string pcapFilter{getDefaultPcapFilter()};
+  std::optional<std::regex> nameFilter;
   bool wantPromisc = true;
   bool wantTimestamp = true;
   bool wantVerbose = false;
@@ -118,7 +117,6 @@ PUBLIC_WITH_TESTS_ELSE_PRIVATE:
   int m_dataLinkType = -1;
 };
 
-} // namespace dump
-} // namespace ndn
+} // namespace ndn::dump
 
 #endif // NDN_TOOLS_DUMP_NDNDUMP_HPP

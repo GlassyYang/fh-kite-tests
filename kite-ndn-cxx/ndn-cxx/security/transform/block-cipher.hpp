@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -35,42 +35,39 @@ namespace transform {
  * The padding scheme of the block cipher is set to the OpenSSL default,
  * which is PKCS padding.
  */
-class BlockCipher : public Transform
+class BlockCipher final : public Transform
 {
 public:
   /**
-   * @brief Create a block cipher
+   * @brief Create a block cipher.
    *
-   * @param algo   The block cipher algorithm to use.
-   * @param op     Whether to encrypt or decrypt.
-   * @param key    Pointer to the key.
-   * @param keyLen Size of the key.
-   * @param iv     Pointer to the initialization vector.
-   * @param ivLen  Length of the initialization vector.
+   * @param algo The block cipher algorithm to use.
+   * @param op   The operation to perform (encrypt or decrypt).
+   * @param key  The symmetric key.
+   * @param iv   The initialization vector.
    */
   BlockCipher(BlockCipherAlgorithm algo, CipherOperator op,
-              const uint8_t* key, size_t keyLen,
-              const uint8_t* iv, size_t ivLen);
+              span<const uint8_t> key, span<const uint8_t> iv);
 
-  ~BlockCipher();
+  ~BlockCipher() final;
 
 private:
   /**
-   * @brief Read partial transformation result (if exists) from BIO
+   * @brief Read partial transformation result (if exists) from BIO.
    */
   void
   preTransform() final;
 
   /**
-   * @brief Write @p data into the cipher
+   * @brief Write @p data into the cipher.
    *
-   * @return number of bytes that are actually accepted
+   * @return Number of bytes that are actually accepted.
    */
   size_t
-  convert(const uint8_t* data, size_t dataLen) final;
+  convert(span<const uint8_t> data) final;
 
   /**
-   * @brief Finalize the encryption
+   * @brief Finalize the encryption.
    */
   void
   finalize() final;
@@ -89,8 +86,7 @@ private:
 
 private:
   void
-  initializeAesCbc(const uint8_t* key, size_t keyLen,
-                   const uint8_t* iv, size_t ivLen, CipherOperator op);
+  initializeAesCbc(span<const uint8_t> key, span<const uint8_t> iv, CipherOperator op);
 
 private:
   class Impl;
@@ -99,8 +95,7 @@ private:
 
 unique_ptr<Transform>
 blockCipher(BlockCipherAlgorithm algo, CipherOperator op,
-            const uint8_t* key, size_t keyLen,
-            const uint8_t* iv, size_t ivLen);
+            span<const uint8_t> key, span<const uint8_t> iv);
 
 } // namespace transform
 } // namespace security

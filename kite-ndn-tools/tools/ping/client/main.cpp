@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Arizona Board of Regents.
+ * Copyright (c) 2014-2022,  Arizona Board of Regents.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -27,9 +27,12 @@
 #include "statistics-collector.hpp"
 #include "tracer.hpp"
 
-namespace ndn {
-namespace ping {
-namespace client {
+#include <boost/asio/signal_set.hpp>
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options/parsers.hpp>
+#include <boost/program_options/variables_map.hpp>
+
+namespace ndn::ping::client {
 
 class Runner : noncopyable
 {
@@ -42,12 +45,9 @@ public:
     , m_signalSetInt(m_face.getIoService(), SIGINT)
     , m_signalSetQuit(m_face.getIoService(), SIGQUIT)
   {
-    m_signalSetInt.async_wait(bind(&Runner::afterIntSignal, this, _1));
-    m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
-
-    m_ping.afterFinish.connect([this] {
-        this->cancel();
-      });
+    m_signalSetInt.async_wait([this] (const auto& err, int) { onInterruptSignal(err); });
+    m_signalSetQuit.async_wait([this] (const auto& err, int) { onQuitSignal(err); });
+    m_ping.afterFinish.connect([this] { cancel(); });
   }
 
   int
@@ -63,8 +63,7 @@ public:
     }
 
     Statistics statistics = m_statisticsCollector.computeStatistics();
-
-    std::cout << statistics << std::endl;
+    std::cout << statistics << "\n";
 
     if (statistics.nReceived == statistics.nSent) {
       return 0;
@@ -84,7 +83,7 @@ private:
   }
 
   void
-  afterIntSignal(const boost::system::error_code& errorCode)
+  onInterruptSignal(const boost::system::error_code& errorCode)
   {
     if (errorCode == boost::asio::error::operation_aborted) {
       return;
@@ -94,14 +93,14 @@ private:
   }
 
   void
-  afterQuitSignal(const boost::system::error_code& errorCode)
+  onQuitSignal(const boost::system::error_code& errorCode)
   {
     if (errorCode == boost::asio::error::operation_aborted) {
       return;
     }
 
     m_statisticsCollector.computeStatistics().printSummary(std::cout);
-    m_signalSetQuit.async_wait(bind(&Runner::afterQuitSignal, this, _1));
+    m_signalSetQuit.async_wait([this] (const auto& err, int) { onQuitSignal(err); });
   }
 
 private:
@@ -114,25 +113,7 @@ private:
   boost::asio::signal_set m_signalSetQuit;
 };
 
-static time::milliseconds
-getMinimumPingInterval()
-{
-  return time::milliseconds(1);
-}
-
-static time::milliseconds
-getDefaultPingInterval()
-{
-  return time::milliseconds(1000);
-}
-
-static time::milliseconds
-getDefaultPingTimeoutThreshold()
-{
-  return time::milliseconds(4000);
-}
-
-static void
+[[noreturn]] static void
 usage(const boost::program_options::options_description& options)
 {
   std::cout << "Usage: ndnping [options] ndn:/name/prefix\n"
@@ -150,8 +131,8 @@ main(int argc, char* argv[])
   Options options;
   options.shouldAllowStaleData = false;
   options.nPings = -1;
-  options.interval = time::milliseconds(getDefaultPingInterval());
-  options.timeout = time::milliseconds(getDefaultPingTimeoutThreshold());
+  options.interval = 1_s;
+  options.timeout = 4_s;
   options.startSeq = 0;
   options.shouldGenerateRandomSeq = true;
   options.shouldPrintTimestamp = false;
@@ -164,9 +145,9 @@ main(int argc, char* argv[])
   visibleOptDesc.add_options()
     ("help,h",      "print this message and exit")
     ("version,V",   "display version and exit")
-    ("interval,i",  po::value<time::milliseconds::rep>()->default_value(getDefaultPingInterval().count()),
+    ("interval,i",  po::value<time::milliseconds::rep>()->default_value(options.interval.count()),
                     "ping interval, in milliseconds")
-    ("timeout,o",   po::value<time::milliseconds::rep>()->default_value(getDefaultPingTimeoutThreshold().count()),
+    ("timeout,o",   po::value<time::milliseconds::rep>()->default_value(options.timeout.count()),
                     "ping timeout, in milliseconds")
     ("count,c",     po::value<int>(&options.nPings), "number of pings to send (default = no limit)")
     ("start,n",     po::value<uint64_t>(&options.startSeq),
@@ -198,7 +179,7 @@ main(int argc, char* argv[])
     }
 
     if (optVm.count("version") > 0) {
-      std::cout << "ndnping " << tools::VERSION << std::endl;
+      std::cout << "ndnping " << tools::VERSION << "\n";
       exit(0);
     }
 
@@ -206,14 +187,13 @@ main(int argc, char* argv[])
       options.prefix = Name(optVm["prefix"].as<std::string>());
     }
     else {
-      std::cerr << "ERROR: No prefix specified" << std::endl;
+      std::cerr << "ERROR: No prefix specified\n";
       usage(visibleOptDesc);
     }
 
     options.interval = time::milliseconds(optVm["interval"].as<time::milliseconds::rep>());
-    if (options.interval < getMinimumPingInterval()) {
-      std::cerr << "ERROR: Specified ping interval is less than the minimum " <<
-                   getMinimumPingInterval() << std::endl;
+    if (options.interval < 1_ms) {
+      std::cerr << "ERROR: Specified ping interval is less than the minimum (1 ms)\n";
       usage(visibleOptDesc);
     }
 
@@ -221,7 +201,7 @@ main(int argc, char* argv[])
 
     if (optVm.count("count") > 0) {
       if (options.nPings <= 0) {
-        std::cerr << "ERROR: Number of ping must be positive" << std::endl;
+        std::cerr << "ERROR: Number of ping must be positive\n";
         usage(visibleOptDesc);
       }
     }
@@ -233,7 +213,7 @@ main(int argc, char* argv[])
     if (optVm.count("identifier") > 0) {
       bool isIdentifierAcceptable = std::all_of(identifier.begin(), identifier.end(), &isalnum);
       if (identifier.empty() || !isIdentifierAcceptable) {
-        std::cerr << "ERROR: Unacceptable client identifier" << std::endl;
+        std::cerr << "ERROR: Unacceptable client identifier\n";
         usage(visibleOptDesc);
       }
 
@@ -249,17 +229,15 @@ main(int argc, char* argv[])
     }
   }
   catch (const po::error& e) {
-    std::cerr << "ERROR: " << e.what() << std::endl;
+    std::cerr << "ERROR: " << e.what() << "\n";
     usage(visibleOptDesc);
   }
 
-  std::cout << "PING " << options.prefix << std::endl;
+  std::cout << "PING " << options.prefix << "\n";
   return Runner(options).run();
 }
 
-} // namespace client
-} // namespace ping
-} // namespace ndn
+} // namespace ndn::ping::client
 
 int
 main(int argc, char* argv[])

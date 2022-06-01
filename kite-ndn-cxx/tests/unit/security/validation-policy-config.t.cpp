@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,10 +20,10 @@
  */
 
 #include "ndn-cxx/security/validation-policy-config.hpp"
+
 #include "ndn-cxx/security/transform/base64-encode.hpp"
 #include "ndn-cxx/security/transform/buffer-source.hpp"
 #include "ndn-cxx/security/transform/stream-sink.hpp"
-#include "ndn-cxx/util/logger.hpp"
 #include "ndn-cxx/util/io.hpp"
 
 #include "tests/boost-test.hpp"
@@ -37,7 +37,7 @@ namespace validator_config {
 namespace tests {
 
 using namespace ndn::tests;
-using namespace ndn::security::v2::tests;
+using namespace ndn::security::tests;
 
 BOOST_AUTO_TEST_SUITE(Security)
 BOOST_AUTO_TEST_SUITE(TestValidationPolicyConfig)
@@ -56,7 +56,6 @@ BOOST_FIXTURE_TEST_CASE(EmptyConfig, HierarchicalValidatorFixture<ValidationPoli
   VALIDATE_FAILURE(d, "Empty policy should reject everything");
 
   Interest i("/Security/ValidationPolicyConfig/I");
-  i.setCanBePrefix(false);
   this->m_keyChain.sign(i, signingByIdentity(this->identity));
   VALIDATE_FAILURE(i, "Empty policy should reject everything");
 }
@@ -91,7 +90,7 @@ class ValidationPolicyConfigFixture : public HierarchicalValidatorFixture<Valida
 {
 public:
   ValidationPolicyConfigFixture()
-    : path(boost::filesystem::path(UNIT_TEST_CONFIG_PATH) / "security" / "v2" / "validation-policy-config")
+    : path(boost::filesystem::path(UNIT_TESTS_TMPDIR) / "security" / "validation-policy-config")
   {
     boost::filesystem::create_directories(path);
     baseConfig = R"CONF(
@@ -108,7 +107,7 @@ public:
           checker
           {
             type hierarchical
-            sig-type rsa-sha256
+            sig-type ecdsa-sha256
           }
         }
       )CONF";
@@ -116,8 +115,7 @@ public:
 
   ~ValidationPolicyConfigFixture()
   {
-    boost::system::error_code ec;
-    boost::filesystem::remove_all(path, ec);
+    boost::filesystem::remove_all(path);
   }
 
 protected:
@@ -135,7 +133,7 @@ public:
   {
     BOOST_CHECK_EQUAL(this->policy.m_isConfigured, false);
 
-    this->saveCertificate(this->identity, (this->path / "identity.ndncert").string());
+    this->saveIdentityCert(this->identity, (this->path / "identity.ndncert").string());
     this->policy.load(this->baseConfig + R"CONF(
         trust-anchor
         {
@@ -167,7 +165,41 @@ public:
         )CONF";
     }
 
-    this->saveCertificate(this->identity, (this->path / "identity.ndncert").string());
+    this->saveIdentityCert(this->identity, (this->path / "identity.ndncert").string());
+
+    BOOST_CHECK_EQUAL(this->policy.m_isConfigured, false);
+
+    this->policy.load(configFile);
+
+    BOOST_CHECK_EQUAL(this->policy.m_isConfigured, true);
+    BOOST_CHECK_EQUAL(this->policy.m_shouldBypass, false);
+  }
+};
+
+template<typename PacketType>
+class LoadFileWithMultipleFileAnchors : public ValidationPolicyConfigFixture<PacketType>
+{
+public:
+  LoadFileWithMultipleFileAnchors()
+  {
+    std::string configFile = (this->path / "config.conf").string();
+    {
+      std::ofstream config(configFile);
+      config << this->baseConfig << R"CONF(
+          trust-anchor
+          {
+            type file
+            file-name "identity.ndncert"
+          }
+          trust-anchor
+          {
+            type file
+            file-name "trust-anchor.ndncert"
+          }
+        )CONF";
+    }
+
+    this->saveIdentityCert(this->identity, (this->path / "identity.ndncert").string());
 
     BOOST_CHECK_EQUAL(this->policy.m_isConfigured, false);
 
@@ -192,7 +224,7 @@ public:
         }
       )CONF");
 
-    this->saveCertificate(this->identity, (this->path / "identity.ndncert").string());
+    this->saveIdentityCert(this->identity, (this->path / "identity.ndncert").string());
 
     BOOST_CHECK_EQUAL(this->policy.m_isConfigured, false);
 
@@ -215,7 +247,7 @@ public:
     {
       using namespace ndn::security::transform;
       const auto& cert = this->identity.getDefaultKey().getDefaultCertificate().wireEncode();
-      bufferSource(cert.wire(), cert.size()) >> base64Encode(false) >> streamSink(os);
+      bufferSource(cert) >> base64Encode(false) >> streamSink(os);
     }
 
     this->policy.load(this->baseConfig + R"CONF(
@@ -298,7 +330,7 @@ public:
     BOOST_CHECK_EQUAL(this->policy.m_isConfigured, false);
 
     boost::filesystem::create_directories(this->path / "keys");
-    this->saveCertificate(this->identity, (this->path / "keys" / "identity.ndncert").string());
+    this->saveIdentityCert(this->identity, (this->path / "keys" / "identity.ndncert").string());
 
     this->policy.load(this->baseConfig + R"CONF(
         trust-anchor
@@ -316,6 +348,7 @@ public:
 
 using DataPolicies = boost::mpl::vector<LoadStringWithFileAnchor<Data>,
                                         LoadFileWithFileAnchor<Data>,
+                                        LoadFileWithMultipleFileAnchors<Data>,
                                         LoadSectionWithFileAnchor<Data>,
                                         LoadStringWithBase64Anchor<Data>,
                                         LoadStringWithDirAnchor<Data>,
@@ -326,6 +359,7 @@ using DataPolicies = boost::mpl::vector<LoadStringWithFileAnchor<Data>,
 
 using InterestPolicies = boost::mpl::vector<LoadStringWithFileAnchor<Interest>,
                                             LoadFileWithFileAnchor<Interest>,
+                                            LoadFileWithMultipleFileAnchors<Interest>,
                                             LoadSectionWithFileAnchor<Interest>,
                                             LoadStringWithBase64Anchor<Interest>,
                                             LoadStringWithDirAnchor<Interest>,
@@ -347,7 +381,11 @@ BOOST_FIXTURE_TEST_CASE_TEMPLATE(ValidateData, Policy, DataPolicies, Policy)
 
   packet = unsignedPacket;
   this->m_keyChain.sign(packet, signingWithSha256());
-  VALIDATE_FAILURE(packet, "Policy doesn't accept Sha256Digest signature");
+  VALIDATE_FAILURE(packet, "Should not be accepted, doesn't pass checker /localhost/identity/digest-sha256");
+
+  packet = Packet("/localhost/identity/digest-sha256/foobar");
+  this->m_keyChain.sign(packet, signingWithSha256());
+  VALIDATE_FAILURE(packet, "Should not be accepted, no rule for the name /localhost/identity/digest-sha256");
 
   packet = unsignedPacket;
   this->m_keyChain.sign(packet, signingByIdentity(this->identity));
@@ -373,16 +411,17 @@ BOOST_FIXTURE_TEST_CASE_TEMPLATE(ValidateInterest, Policy, InterestPolicies, Pol
 
   using Packet = typename Policy::Packet;
   Packet unsignedPacket("/Security/ValidatorFixture/Sub1/Sub2/Packet");
-  // All of the packet types inputed to this test case template are Interests, so we can call
-  // setCanBePrefix
-  unsignedPacket.setCanBePrefix(false);
 
   Packet packet = unsignedPacket;
   VALIDATE_FAILURE(packet, "Unsigned");
 
   packet = unsignedPacket;
   this->m_keyChain.sign(packet, signingWithSha256());
-  VALIDATE_FAILURE(packet, "Policy doesn't accept Sha256Digest signature");
+  VALIDATE_FAILURE(packet, "Should not be accepted, doesn't pass checker /localhost/identity/digest-sha256");
+
+  packet = Packet("/localhost/identity/digest-sha256/foobar");
+  this->m_keyChain.sign(packet, signingWithSha256());
+  VALIDATE_FAILURE(packet, "Should not be accepted, no rule for the name /localhost/identity/digest-sha256");
 
   packet = unsignedPacket;
   this->m_keyChain.sign(packet, signingByIdentity(this->identity));
@@ -399,6 +438,198 @@ BOOST_FIXTURE_TEST_CASE_TEMPLATE(ValidateInterest, Policy, InterestPolicies, Pol
   packet = unsignedPacket;
   this->m_keyChain.sign(packet, signingByIdentity(this->subSelfSignedIdentity));
   VALIDATE_FAILURE(packet, "Should fail, because subSelfSignedIdentity is not a trust anchor");
+}
+
+BOOST_FIXTURE_TEST_CASE(DigestSha256, HierarchicalValidatorFixture<ValidationPolicyConfig>)
+{
+  BOOST_CHECK_EQUAL(this->policy.m_isConfigured, false);
+  this->policy.load(R"CONF(
+      rule
+      {
+        id test-rule-data-id
+        for data
+        filter
+        {
+          type name
+          name /Security/ValidatorFixture
+          relation is-prefix-of
+        }
+        checker
+        {
+          type customized
+          sig-type sha256
+        }
+      }
+      rule
+      {
+        id test-rule-interest-id
+        for interest
+        filter
+        {
+          type name
+          name /Security/ValidatorFixture
+          relation is-prefix-of
+        }
+        checker
+        {
+          type customized
+          sig-type sha256
+        }
+      }
+    )CONF", "test-config");
+
+
+  Interest interest("/Security/ValidatorFixture/Sub1/Sub2/Packet");
+  this->m_keyChain.sign(interest, signingWithSha256());
+  VALIDATE_SUCCESS(interest, "Should be accepted");
+
+  Data data("/Security/ValidatorFixture/Sub1/Sub2/Packet");
+  this->m_keyChain.sign(data, signingWithSha256());
+  VALIDATE_SUCCESS(data, "Should be accepted");
+}
+
+BOOST_FIXTURE_TEST_CASE(DigestSha256WithKeyLocator, HierarchicalValidatorFixture<ValidationPolicyConfig>)
+{
+  BOOST_CHECK_EQUAL(this->policy.m_isConfigured, false);
+  this->policy.load(R"CONF(
+      rule
+      {
+        id test-rule-data-id
+        for data
+        filter
+        {
+          type name
+          name /localhost/identity/digest-sha256
+          relation is-prefix-of
+        }
+        checker
+        {
+          type customized
+          sig-type sha256
+          key-locator
+          {
+            type name
+            hyper-relation
+            {
+              k-regex ^(<>*)$
+              k-expand \\1
+              h-relation is-prefix-of
+              p-regex ^(<>*)$
+              p-expand \\1
+            }
+          }
+        }
+      }
+      rule
+      {
+        id test-rule-interest-id
+        for interest
+        filter
+        {
+          type name
+          name /localhost/identity/digest-sha256
+          relation is-prefix-of
+        }
+        checker
+        {
+          type customized
+          sig-type sha256
+          key-locator
+          {
+            type name
+            hyper-relation
+            {
+              k-regex ^(<>*)$
+              k-expand \\1
+              h-relation is-prefix-of
+              p-regex ^(<>*)$
+              p-expand \\1
+            }
+          }
+        }
+      }
+    )CONF", "test-config");
+
+
+  Interest interest("/localhost/identity/digest-sha256/foobar");
+  this->m_keyChain.sign(interest, signingWithSha256());
+  VALIDATE_SUCCESS(interest, "Should be accepted");
+
+  Data data("/localhost/identity/digest-sha256/foobar");
+  this->m_keyChain.sign(data, signingWithSha256());
+  VALIDATE_SUCCESS(data, "Should be accepted");
+}
+
+BOOST_FIXTURE_TEST_CASE(SigTypeCheck, HierarchicalValidatorFixture<ValidationPolicyConfig>)
+{
+  BOOST_CHECK_EQUAL(this->policy.m_isConfigured, false);
+  this->policy.load(R"CONF(
+      rule
+      {
+        id test-rule-data-id
+        for data
+        filter
+        {
+          type name
+          name /localhost/identity/digest-sha256
+          relation is-prefix-of
+        }
+        checker
+        {
+          type customized
+          sig-type ecdsa-sha256
+          key-locator
+          {
+            type name
+            hyper-relation
+            {
+              k-regex ^(<>*)$
+              k-expand \\1
+              h-relation is-prefix-of
+              p-regex ^(<>*)$
+              p-expand \\1
+            }
+          }
+        }
+      }
+      rule
+      {
+        id test-rule-interest-id
+        for interest
+        filter
+        {
+          type name
+          name /localhost/identity/digest-sha256
+          relation is-prefix-of
+        }
+        checker
+        {
+          type customized
+          sig-type ecdsa-sha256
+          key-locator
+          {
+            type name
+            hyper-relation
+            {
+              k-regex ^(<>*)$
+              k-expand \\1
+              h-relation is-prefix-of
+              p-regex ^(<>*)$
+              p-expand \\1
+            }
+          }
+        }
+      }
+    )CONF", "test-config");
+
+
+  Interest interest("/localhost/identity/digest-sha256/foobar");
+  this->m_keyChain.sign(interest, signingWithSha256());
+  VALIDATE_FAILURE(interest, "Signature type check should fail");
+
+  Data data("/localhost/identity/digest-sha256/foobar");
+  this->m_keyChain.sign(data, signingWithSha256());
+  VALIDATE_FAILURE(data, "Signature type check should fail");
 }
 
 BOOST_FIXTURE_TEST_CASE(Reload, HierarchicalValidatorFixture<ValidationPolicyConfig>)
@@ -418,7 +649,7 @@ BOOST_FIXTURE_TEST_CASE(Reload, HierarchicalValidatorFixture<ValidationPolicyCon
         checker
         {
           type hierarchical
-          sig-type rsa-sha256
+          sig-type ecdsa-sha256
         }
       }
       rule
@@ -434,7 +665,7 @@ BOOST_FIXTURE_TEST_CASE(Reload, HierarchicalValidatorFixture<ValidationPolicyCon
         checker
         {
           type hierarchical
-          sig-type rsa-sha256
+          sig-type ecdsa-sha256
         }
       }
       trust-anchor

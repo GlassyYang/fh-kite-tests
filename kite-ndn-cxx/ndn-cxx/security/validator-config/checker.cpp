@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,6 +20,7 @@
  */
 
 #include "ndn-cxx/security/validator-config/checker.hpp"
+#include "ndn-cxx/security/validation-policy.hpp"
 #include "ndn-cxx/security/validation-state.hpp"
 #include "ndn-cxx/security/verification-helpers.hpp"
 #include "ndn-cxx/security/pib/key.hpp"
@@ -31,107 +32,150 @@ namespace security {
 inline namespace v2 {
 namespace validator_config {
 
-bool
-Checker::check(uint32_t pktType, const Name& pktName, const Name& klName,
-               const shared_ptr<ValidationState>& state)
+Checker::Checker(tlv::SignatureTypeValue sigType)
+  : m_sigType(sigType)
+{
+}
+
+Checker::Result::Result(std::string error)
+  : m_error(std::move(error))
+{
+}
+
+class Checker::NegativeResultBuilder
+{
+public:
+  template<typename T>
+  NegativeResultBuilder&
+  operator<<(const T& value)
+  {
+    m_ss << value;
+    return *this;
+  }
+
+  operator Checker::Result() const
+  {
+    auto error = m_ss.str();
+    return Checker::Result(error.empty() ? "checker failed" : std::move(error));
+  }
+
+private:
+  std::ostringstream m_ss;
+};
+
+Checker::NegativeResultBuilder
+Checker::reject()
+{
+  return NegativeResultBuilder();
+}
+
+Checker::Result
+Checker::check(uint32_t pktType, tlv::SignatureTypeValue sigType, const Name& pktName, const Name& klName,
+               const ValidationState& state)
 {
   BOOST_ASSERT(pktType == tlv::Interest || pktType == tlv::Data);
 
+  if (sigType != m_sigType) {
+    return reject() << "signature type does not match the checker "
+                    << sigType << " != " << m_sigType;
+  }
+
   if (pktType == tlv::Interest) {
-    auto fmt = state->getTag<SignedInterestFormatTag>();
+    auto fmt = state.getTag<SignedInterestFormatTag>();
     BOOST_ASSERT(fmt);
 
     if (*fmt == SignedInterestFormat::V03) {
       // This check is redundant if parameter digest checking is enabled. However, the parameter
       // digest checking can be disabled in API.
       if (pktName.size() == 0 || pktName[-1].type() != tlv::ParametersSha256DigestComponent) {
-        return false;
+        return reject() << "ParametersSha256DigestComponent missing";
       }
-      return checkNames(pktName.getPrefix(-1), klName, state);
+      return checkNames(pktName.getPrefix(-1), klName);
     }
     else {
       if (pktName.size() < signed_interest::MIN_SIZE)
-        return false;
+        return reject() << "name too short";
 
-      return checkNames(pktName.getPrefix(-signed_interest::MIN_SIZE), klName, state);
+      return checkNames(pktName.getPrefix(-signed_interest::MIN_SIZE), klName);
     }
   }
   else {
-    return checkNames(pktName, klName, state);
+    return checkNames(pktName, klName);
   }
 }
 
-NameRelationChecker::NameRelationChecker(const Name& name, const NameRelation& relation)
-  : m_name(name)
+Checker::Result
+Checker::checkNames(const Name& pktName, const Name& klName)
+{
+  return accept();
+}
+
+NameRelationChecker::NameRelationChecker(tlv::SignatureTypeValue sigType, const Name& name, const NameRelation& relation)
+  : Checker(sigType)
+  , m_name(name)
   , m_relation(relation)
 {
 }
 
-bool
-NameRelationChecker::checkNames(const Name& pktName, const Name& klName,
-                                const shared_ptr<ValidationState>& state)
+Checker::Result
+NameRelationChecker::checkNames(const Name& pktName, const Name& klName)
 {
   // pktName not used in this check
-  Name identity = extractIdentityFromKeyName(klName);
-  bool result = checkNameRelation(m_relation, m_name, identity);
-  if (!result) {
-    std::ostringstream os;
-    os << "KeyLocator check failed: name relation " << m_name << " " << m_relation
-       << " for packet " << pktName << " is invalid"
-       << " (KeyLocator=" << klName << ", identity=" << identity << ")";
-    state->fail({ValidationError::POLICY_ERROR, os.str()});
+  Name identity = extractIdentityNameFromKeyLocator(klName);
+  if (checkNameRelation(m_relation, m_name, identity)) {
+    return accept();
   }
-  return result;
+
+  return reject() << "identity " << identity << " and packet name do not satisfy "
+                  << m_relation << " relation";
 }
 
-RegexChecker::RegexChecker(const Regex& regex)
-  : m_regex(regex)
+RegexChecker::RegexChecker(tlv::SignatureTypeValue sigType, const Regex& regex)
+  : Checker(sigType)
+  , m_regex(regex)
 {
 }
 
-bool
-RegexChecker::checkNames(const Name& pktName, const Name& klName, const shared_ptr<ValidationState>& state)
+Checker::Result
+RegexChecker::checkNames(const Name& pktName, const Name& klName)
 {
-  bool result = m_regex.match(klName);
-  if (!result) {
-    std::ostringstream os;
-    os << "KeyLocator check failed: regex " << m_regex << " for packet " << pktName << " is invalid"
-       << " (KeyLocator=" << klName << ")";
-    state->fail({ValidationError::POLICY_ERROR, os.str()});
+  if (m_regex.match(klName)) {
+    return accept();
   }
-  return result;
+
+  return reject() << "KeyLocator does not match regex " << m_regex;
 }
 
-HyperRelationChecker::HyperRelationChecker(const std::string& pktNameExpr, const std::string pktNameExpand,
+HyperRelationChecker::HyperRelationChecker(tlv::SignatureTypeValue sigType,
+                                           const std::string& pktNameExpr, const std::string pktNameExpand,
                                            const std::string& klNameExpr, const std::string klNameExpand,
                                            const NameRelation& hyperRelation)
-  : m_hyperPRegex(pktNameExpr, pktNameExpand)
+  : Checker(sigType)
+  , m_hyperPRegex(pktNameExpr, pktNameExpand)
   , m_hyperKRegex(klNameExpr, klNameExpand)
   , m_hyperRelation(hyperRelation)
 {
 }
 
-bool
-HyperRelationChecker::checkNames(const Name& pktName, const Name& klName,
-                                 const shared_ptr<ValidationState>& state)
+Checker::Result
+HyperRelationChecker::checkNames(const Name& pktName, const Name& klName)
 {
-  if (!m_hyperPRegex.match(pktName) || !m_hyperKRegex.match(klName)) {
-    std::ostringstream os;
-    os << "Packet " << pktName << " (" << "KeyLocator=" << klName << ") does not match "
-       << "the hyper relation rule pkt=" << m_hyperPRegex << ", key=" << m_hyperKRegex;
-    state->fail({ValidationError::POLICY_ERROR, os.str()});
-    return false;
+  if (!m_hyperPRegex.match(pktName)) {
+    return reject() << "packet name does not match p-regex " << m_hyperPRegex;
   }
 
-  bool result = checkNameRelation(m_hyperRelation, m_hyperKRegex.expand(), m_hyperPRegex.expand());
-  if (!result) {
-    std::ostringstream os;
-    os << "KeyLocator check failed: hyper relation " << m_hyperRelation
-       << " pkt=" << m_hyperPRegex << ", key=" << m_hyperKRegex
-       << " of packet " << pktName << " (KeyLocator=" << klName << ") is invalid";
-    state->fail({ValidationError::POLICY_ERROR, os.str()});
+  if (!m_hyperKRegex.match(klName)) {
+    return reject() << "KeyLocator does not match k-regex " << m_hyperKRegex;
   }
-  return result;
+
+  auto kExpand = m_hyperKRegex.expand();
+  auto pExpand = m_hyperPRegex.expand();
+  if (checkNameRelation(m_hyperRelation, kExpand, pExpand)) {
+    return accept();
+  }
+
+  return reject() << "expanded names " << kExpand << " and " << pExpand
+                  << " do not satisfy " << m_hyperRelation << " relation";
 }
 
 unique_ptr<Checker>
@@ -156,6 +200,27 @@ Checker::create(const ConfigSection& configSection, const std::string& configFil
   }
 }
 
+static tlv::SignatureTypeValue
+parseSigType(const std::string& value)
+{
+  if (boost::iequals(value, "rsa-sha256")) {
+    return tlv::SignatureSha256WithRsa;
+  }
+  else if (boost::iequals(value, "ecdsa-sha256")) {
+    return tlv::SignatureSha256WithEcdsa;
+  }
+  // TODO: uncomment when HMAC logic is defined/implemented
+  // else if (boost::iequals(value, "hmac-sha256")) {
+  //   return tlv::SignatureHmacWithSha256;
+  // }
+  else if (boost::iequals(value, "sha256")) {
+    return tlv::DigestSha256;
+  }
+  else {
+    NDN_THROW(Error("Unrecognized value of <checker.sig-type>: " + value));
+  }
+}
+
 unique_ptr<Checker>
 Checker::createCustomizedChecker(const ConfigSection& configSection,
                                  const std::string& configFilename)
@@ -163,19 +228,23 @@ Checker::createCustomizedChecker(const ConfigSection& configSection,
   auto propertyIt = configSection.begin();
   propertyIt++;
 
-  // TODO implement restrictions based on signature type (outside this checker)
+  // assume that checker by default is for ecdsa-sha256, unless explicitly specified
+  auto sigType = tlv::SignatureSha256WithEcdsa;
 
   if (propertyIt != configSection.end() && boost::iequals(propertyIt->first, "sig-type")) {
-    // ignore sig-type
+    sigType = parseSigType(propertyIt->second.data());
     propertyIt++;
   }
 
-  // Get checker.key-locator
   if (propertyIt == configSection.end() || !boost::iequals(propertyIt->first, "key-locator")) {
+    if (sigType == tlv::DigestSha256) {
+      // for sha256, key-locator is optional
+      return make_unique<Checker>(sigType);
+    }
     NDN_THROW(Error("Expecting <checker.key-locator>"));
   }
 
-  auto checker = createKeyLocatorChecker(propertyIt->second, configFilename);
+  auto checker = createKeyLocatorChecker(sigType, propertyIt->second, configFilename);
   propertyIt++;
 
   if (propertyIt != configSection.end()) {
@@ -191,24 +260,26 @@ Checker::createHierarchicalChecker(const ConfigSection& configSection,
   auto propertyIt = configSection.begin();
   propertyIt++;
 
-  // TODO implement restrictions based on signature type (outside this checker)
+  // assume that checker by default is for ecdsa-sha256, unless explicitly specificied
+  auto sigType = tlv::SignatureSha256WithEcdsa;
 
   if (propertyIt != configSection.end() && boost::iequals(propertyIt->first, "sig-type")) {
-    // ignore sig-type
+    sigType = parseSigType(propertyIt->second.data());
     propertyIt++;
   }
 
   if (propertyIt != configSection.end()) {
     NDN_THROW(Error("Expecting end of <checker>"));
   }
-  return make_unique<HyperRelationChecker>("^(<>*)$",        "\\1",
-                                           "^(<>*)<KEY><>$", "\\1",
+  return make_unique<HyperRelationChecker>(sigType,
+                                           "^(<>*)$",             "\\1",
+                                           "^(<>*)<KEY><>{1,3}$", "\\1",
                                            NameRelation::IS_PREFIX_OF);
 }
 
 unique_ptr<Checker>
-Checker::createKeyLocatorChecker(const ConfigSection& configSection,
-                                 const std::string& configFilename)
+Checker::createKeyLocatorChecker(tlv::SignatureTypeValue sigType,
+                                 const ConfigSection& configSection, const std::string& configFilename)
 {
   auto propertyIt = configSection.begin();
 
@@ -218,14 +289,14 @@ Checker::createKeyLocatorChecker(const ConfigSection& configSection,
 
   std::string type = propertyIt->second.data();
   if (boost::iequals(type, "name"))
-    return createKeyLocatorNameChecker(configSection, configFilename);
+    return createKeyLocatorNameChecker(sigType, configSection, configFilename);
   else
     NDN_THROW(Error("Unrecognized <checker.key-locator.type>: " + type));
 }
 
 unique_ptr<Checker>
-Checker::createKeyLocatorNameChecker(const ConfigSection& configSection,
-                                     const std::string& configFilename)
+Checker::createKeyLocatorNameChecker(tlv::SignatureTypeValue sigType,
+                                     const ConfigSection& configSection, const std::string& configFilename)
 {
   auto propertyIt = configSection.begin();
   propertyIt++;
@@ -255,7 +326,7 @@ Checker::createKeyLocatorNameChecker(const ConfigSection& configSection,
     if (propertyIt != configSection.end()) {
       NDN_THROW(Error("Expecting end of <checker.key-locator>"));
     }
-    return make_unique<NameRelationChecker>(name, relation);
+    return make_unique<NameRelationChecker>(sigType, name, relation);
   }
   else if (boost::iequals(propertyIt->first, "regex")) {
     std::string regexString = propertyIt->second.data();
@@ -266,7 +337,7 @@ Checker::createKeyLocatorNameChecker(const ConfigSection& configSection,
     }
 
     try {
-      return make_unique<RegexChecker>(Regex(regexString));
+      return make_unique<RegexChecker>(sigType, Regex(regexString));
     }
     catch (const Regex::Error&) {
       NDN_THROW_NESTED(Error("Invalid <checker.key-locator.regex>: " + regexString));
@@ -322,7 +393,7 @@ Checker::createKeyLocatorNameChecker(const ConfigSection& configSection,
 
     NameRelation relation = getNameRelationFromString(hRelation);
     try {
-      return make_unique<HyperRelationChecker>(pRegex, pExpand, kRegex, kExpand, relation);
+      return make_unique<HyperRelationChecker>(sigType, pRegex, pExpand, kRegex, kExpand, relation);
     }
     catch (const Regex::Error&) {
       NDN_THROW_NESTED(Error("Invalid regex for <key-locator.hyper-relation>"));

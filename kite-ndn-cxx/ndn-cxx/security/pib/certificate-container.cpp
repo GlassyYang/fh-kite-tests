@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,46 +22,28 @@
 #include "ndn-cxx/security/pib/certificate-container.hpp"
 #include "ndn-cxx/security/pib/pib-impl.hpp"
 #include "ndn-cxx/util/concepts.hpp"
+#include "ndn-cxx/util/logger.hpp"
 
 namespace ndn {
 namespace security {
 namespace pib {
 
+NDN_LOG_INIT(ndn.security.CertificateContainer);
+
 NDN_CXX_ASSERT_FORWARD_ITERATOR(CertificateContainer::const_iterator);
 
-CertificateContainer::const_iterator::const_iterator()
-  : m_container(nullptr)
-{
-}
-
-CertificateContainer::const_iterator::const_iterator(std::set<Name>::const_iterator it,
-                                                     const CertificateContainer& container)
+CertificateContainer::const_iterator::const_iterator(NameSet::const_iterator it,
+                                                     const CertificateContainer& container) noexcept
   : m_it(it)
   , m_container(&container)
 {
 }
 
-v2::Certificate
+Certificate
 CertificateContainer::const_iterator::operator*()
 {
   BOOST_ASSERT(m_container != nullptr);
   return m_container->get(*m_it);
-}
-
-CertificateContainer::const_iterator&
-CertificateContainer::const_iterator::operator++()
-{
-  ++m_it;
-  return *this;
-}
-
-CertificateContainer::const_iterator
-CertificateContainer::const_iterator::operator++(int)
-{
-  BOOST_ASSERT(m_container != nullptr);
-  const_iterator it(m_it, *m_container);
-  ++m_it;
-  return it;
 }
 
 bool
@@ -69,15 +51,9 @@ CertificateContainer::const_iterator::operator==(const const_iterator& other) co
 {
   bool isThisEnd = m_container == nullptr || m_it == m_container->m_certNames.end();
   bool isOtherEnd = other.m_container == nullptr || other.m_it == other.m_container->m_certNames.end();
-  return ((isThisEnd || isOtherEnd) ?
-          (isThisEnd == isOtherEnd) :
-          m_container->m_pib == other.m_container->m_pib && m_it == other.m_it);
-}
-
-bool
-CertificateContainer::const_iterator::operator!=(const const_iterator& other) const
-{
-  return !(*this == other);
+  if (isThisEnd)
+    return isOtherEnd;
+  return !isOtherEnd && m_container->m_pib == other.m_container->m_pib && m_it == other.m_it;
 }
 
 CertificateContainer::CertificateContainer(const Name& keyName, shared_ptr<PibImpl> pibImpl)
@@ -89,72 +65,61 @@ CertificateContainer::CertificateContainer(const Name& keyName, shared_ptr<PibIm
 }
 
 CertificateContainer::const_iterator
-CertificateContainer::begin() const
-{
-  return const_iterator(m_certNames.begin(), *this);
-}
-
-CertificateContainer::const_iterator
-CertificateContainer::end() const
-{
-  return const_iterator();
-}
-
-CertificateContainer::const_iterator
 CertificateContainer::find(const Name& certName) const
 {
-  return const_iterator(m_certNames.find(certName), *this);
-}
-
-size_t
-CertificateContainer::size() const
-{
-  return m_certNames.size();
+  return {m_certNames.find(certName), *this};
 }
 
 void
-CertificateContainer::add(const v2::Certificate& certificate)
+CertificateContainer::add(const Certificate& certificate)
 {
-  if (m_keyName != certificate.getKeyName())
-    NDN_THROW(std::invalid_argument("Certificate name `" + certificate.getKeyName().toUri() + "` "
-                                    "does not match key name"));
+  if (m_keyName != certificate.getKeyName()) {
+    NDN_THROW(std::invalid_argument("Certificate name `" + certificate.getName().toUri() + "` "
+                                    "does not match key `" + m_keyName.toUri() + "`"));
+  }
 
   const Name& certName = certificate.getName();
-  m_certNames.insert(certName);
-  m_certs[certName] = certificate;
+  bool isNew = m_certNames.insert(certName).second;
+  NDN_LOG_DEBUG((isNew ? "Adding " : "Replacing ") << certName);
+
   m_pib->addCertificate(certificate);
+  m_certs[certName] = certificate; // use insert_or_assign in C++17
 }
 
 void
 CertificateContainer::remove(const Name& certName)
 {
-  if (!v2::Certificate::isValidName(certName) ||
-      v2::extractKeyNameFromCertName(certName) != m_keyName) {
+  if (m_keyName != extractKeyNameFromCertName(certName)) {
     NDN_THROW(std::invalid_argument("Certificate name `" + certName.toUri() + "` "
-                                    "is invalid or does not match key name"));
+                                    "does not match key `" + m_keyName.toUri() + "`"));
   }
 
-  m_certNames.erase(certName);
-  m_certs.erase(certName);
+  if (m_certNames.erase(certName) > 0) {
+    NDN_LOG_DEBUG("Removing " << certName);
+    m_certs.erase(certName);
+  }
+  else {
+    // consistency check
+    BOOST_ASSERT(m_certs.find(certName) == m_certs.end());
+  }
   m_pib->removeCertificate(certName);
 }
 
-v2::Certificate
+Certificate
 CertificateContainer::get(const Name& certName) const
 {
-  auto it = m_certs.find(certName);
-
-  if (it != m_certs.end())
-    return it->second;
-
-  if (!v2::Certificate::isValidName(certName) ||
-      v2::extractKeyNameFromCertName(certName) != m_keyName) {
+  if (m_keyName != extractKeyNameFromCertName(certName)) {
     NDN_THROW(std::invalid_argument("Certificate name `" + certName.toUri() + "` "
-                                    "is invalid or does not match key name"));
+                                    "does not match key `" + m_keyName.toUri() + "`"));
   }
 
-  m_certs[certName] = m_pib->getCertificate(certName);
-  return m_certs[certName];
+  auto it = m_certs.find(certName);
+  if (it != m_certs.end()) {
+    return it->second;
+  }
+
+  auto ret = m_certs.emplace(certName, m_pib->getCertificate(certName));
+  return ret.first->second;
 }
 
 bool

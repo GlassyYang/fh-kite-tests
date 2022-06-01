@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Arizona Board of Regents.
+ * Copyright (c) 2014-2022,  Arizona Board of Regents.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -22,17 +22,14 @@
  */
 
 #include "ping.hpp"
+
 #include <ndn-cxx/util/random.hpp>
 
-namespace ndn {
-namespace ping {
-namespace client {
+namespace ndn::ping::client {
 
 Ping::Ping(Face& face, const Options& options)
   : m_options(options)
-  , m_nSent(0)
   , m_nextSeq(options.startSeq)
-  , m_nOutstanding(0)
   , m_face(face)
   , m_scheduler(m_face.getIoService())
 {
@@ -59,15 +56,14 @@ Ping::performPing()
   BOOST_ASSERT((m_options.nPings < 0) || (m_nSent < m_options.nPings));
 
   Interest interest(makePingName(m_nextSeq));
-  interest.setCanBePrefix(false);
   interest.setMustBeFresh(!m_options.shouldAllowStaleData);
   interest.setInterestLifetime(m_options.timeout);
 
   auto now = time::steady_clock::now();
   m_face.expressInterest(interest,
-                         bind(&Ping::onData, this, m_nextSeq, now),
-                         bind(&Ping::onNack, this, _2, m_nextSeq, now),
-                         bind(&Ping::onTimeout, this, m_nextSeq));
+    [=, seq = m_nextSeq] (auto&&...) { onData(seq, now); },
+    [=, seq = m_nextSeq] (auto&&, const auto& nack) { onNack(seq, now, nack); },
+    [=, seq = m_nextSeq] (auto&&...) { onTimeout(seq); });
 
   ++m_nSent;
   ++m_nextSeq;
@@ -82,7 +78,7 @@ Ping::performPing()
 }
 
 void
-Ping::onData(uint64_t seq, const time::steady_clock::TimePoint& sendTime)
+Ping::onData(uint64_t seq, const time::steady_clock::time_point& sendTime)
 {
   time::nanoseconds rtt = time::steady_clock::now() - sendTime;
   afterData(seq, rtt);
@@ -90,7 +86,7 @@ Ping::onData(uint64_t seq, const time::steady_clock::TimePoint& sendTime)
 }
 
 void
-Ping::onNack(const lp::Nack& nack, uint64_t seq, const time::steady_clock::TimePoint& sendTime)
+Ping::onNack(uint64_t seq, const time::steady_clock::time_point& sendTime, const lp::Nack& nack)
 {
   time::nanoseconds rtt = time::steady_clock::now() - sendTime;
   afterNack(seq, rtt, nack.getHeader());
@@ -125,6 +121,4 @@ Ping::makePingName(uint64_t seq) const
   return name;
 }
 
-} // namespace client
-} // namespace ping
-} // namespace ndn
+} // namespace ndn::ping::client

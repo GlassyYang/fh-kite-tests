@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -109,7 +109,7 @@ BOOST_AUTO_TEST_CASE(AppMetaInfo)
   // // These octets are obtained by the snippet below.
   // // This check is intended to detect unexpected encoding change in the future.
   // const Block& wire = info1.wireEncode();
-  // for (Buffer::const_iterator it = wire.begin(); it != wire.end(); ++it) {
+  // for (auto it = wire.begin(); it != wire.end(); ++it) {
   //   printf("0x%02x, ", *it);
   // }
   const uint8_t METAINFO[] = {0x14, 0x77, 0x18, 0x01, 0xc4, 0x19, 0x02, 0x0e, 0x10, 0x1a, 0x0c,
@@ -124,11 +124,11 @@ BOOST_AUTO_TEST_CASE(AppMetaInfo)
                               0x6c, 0x65, 0x78, 0x2c, 0x20, 0x49, 0x20, 0x61, 0x6d, 0x20, 0x58,
                               0x69, 0x61, 0x6f, 0x6b, 0x65, 0x20, 0x4a, 0x69, 0x61, 0x6e, 0x67};
 
-  BOOST_REQUIRE_EQUAL_COLLECTIONS(info1.wireEncode().begin(), info1.wireEncode().end(),
-                                  METAINFO, METAINFO + sizeof(METAINFO));
+  BOOST_CHECK_EQUAL_COLLECTIONS(info1.wireEncode().begin(), info1.wireEncode().end(),
+                                METAINFO, METAINFO + sizeof(METAINFO));
 
   MetaInfo info2;
-  info2.wireDecode(Block(METAINFO, sizeof(METAINFO)));
+  info2.wireDecode(Block(METAINFO));
 
   for (size_t i = 0; i < 5; i++) {
     uint32_t tlvType = 128 + i * 10;
@@ -139,9 +139,7 @@ BOOST_AUTO_TEST_CASE(AppMetaInfo)
 
     block = info2.findAppMetaInfo(tlvType);
     BOOST_REQUIRE(block != nullptr);
-
-    std::string s3(reinterpret_cast<const char*>(block->value()), block->value_size());
-    BOOST_CHECK_EQUAL(s3, ss[i]);
+    BOOST_CHECK_EQUAL(readString(*block), ss[i]);
   }
 }
 

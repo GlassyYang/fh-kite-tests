@@ -4,7 +4,7 @@ ndnpoke
 Synopsis
 --------
 
-**ndnpoke** [-h] [-u] [-F] [-x *freshness*] [-S *info*] [-w *timeout*] [-v] [-V] *name*
+**ndnpoke** [-h] [-f *freshness*] [-F] [-S *info*] [-u\|\ -w *timeout*] [-v] [-V] *name*
 
 Description
 -----------
@@ -20,14 +20,11 @@ Options
 ``-h, --help``
   Print help and exit.
 
-``-u, --unsolicited``
-  Send the Data packet without waiting for an incoming Interest.
+``-f, --freshness <freshness>``
+  Set ``freshness`` (in milliseconds) as the ``FreshnessPeriod``.
 
 ``-F, --final``
   Set the ``FinalBlockId`` to the last component of *name*.
-
-``-x, --freshness <freshness>``
-  Set ``freshness`` (in milliseconds) as the ``FreshnessPeriod``.
 
 ``-S, --signing-info <info>``
   Specify the parameters used to sign the Data packet. If omitted, the default key of
@@ -36,10 +33,13 @@ Options
 
   * Sign with the default certificate of the default key of an identity: ``id:/<my-identity>``.
   * Sign with the default certificate of a specific key: ``key:/<my-identity>/ksk-1``.
-  * Sign with a specific certificate: ``cert:/<my-identity>/KEY/ksk-1/ID-CERT/%FD%01``.
+  * Sign with a specific certificate: ``cert:/<my-identity>/KEY/ksk-1/ID-CERT/v=1``.
   * Sign with a SHA-256 digest: ``id:/localhost/identity/digest-sha256``. Note that this
     is only a hash function, not a real signature, but it can significantly speed up
     packet signing operations.
+
+``-u, --unsolicited``
+  Send the Data packet without waiting for an incoming Interest.
 
 ``-w, --timeout <timeout>``
   Quit the program after ``timeout`` milliseconds, even if no Interest has been received.
@@ -63,8 +63,8 @@ Exit Status
 
 5: Prefix registration failed
 
-Example
--------
+Examples
+--------
 
 Create a Data packet with content ``hello`` and name ``/app/video`` and wait at
 most 3 seconds for a matching Interest to arrive::

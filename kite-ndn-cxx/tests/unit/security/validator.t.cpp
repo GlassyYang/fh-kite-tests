@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -198,7 +198,7 @@ class ValidationPolicySimpleHierarchyForInterestOnly : public ValidationPolicySi
 {
 public:
   void
-  checkPolicy(const Data& data, const shared_ptr<ValidationState>& state,
+  checkPolicy(const Data&, const shared_ptr<ValidationState>& state,
               const ValidationContinuation& continueValidation) override
   {
     continueValidation(nullptr, state);
@@ -209,7 +209,6 @@ BOOST_FIXTURE_TEST_CASE(ValidateInterestsButBypassForData,
                         HierarchicalValidatorFixture<ValidationPolicySimpleHierarchyForInterestOnly>)
 {
   Interest interest("/Security/ValidatorFixture/Sub1/Sub2/Interest");
-  interest.setCanBePrefix(false);
   Data data("/Security/ValidatorFixture/Sub1/Sub2/Interest");
 
   VALIDATE_FAILURE(interest, "Unsigned");
@@ -218,7 +217,6 @@ BOOST_FIXTURE_TEST_CASE(ValidateInterestsButBypassForData,
   face.sentInterests.clear();
 
   interest = Interest("/Security/ValidatorFixture/Sub1/Sub2/Interest");
-  interest.setCanBePrefix(false);
   m_keyChain.sign(interest, signingWithSha256());
   m_keyChain.sign(data, signingWithSha256());
   VALIDATE_FAILURE(interest, "Required KeyLocator/Name missing (not passed to policy)");
@@ -265,31 +263,17 @@ BOOST_AUTO_TEST_CASE(InfiniteCertChain)
     Key parentKey = m_keyChain.createKey(subIdentity);
     Key requestedKey = subIdentity.getKey(interest.getName());
 
-    Name certificateName = requestedKey.getName();
-    certificateName
-    .append("looper")
-    .appendVersion();
-    v2::Certificate certificate;
-    certificate.setName(certificateName);
+    SignatureInfo sigInfo;
+    sigInfo.setKeyLocator(parentKey.getName());
+    auto si = signingByKey(parentKey).setSignatureInfo(sigInfo);
 
-    // set metainfo
-    certificate.setContentType(tlv::ContentType_Key);
-    certificate.setFreshnessPeriod(1_h);
-
-    // set content
-    certificate.setContent(requestedKey.getPublicKey().data(), requestedKey.getPublicKey().size());
-
-    // set signature-info
-    SignatureInfo info;
-    info.setValidityPeriod(security::ValidityPeriod(time::system_clock::now() - 10_days,
-                                                    time::system_clock::now() + 10_days));
-
-    m_keyChain.sign(certificate, signingByKey(parentKey).setSignatureInfo(info));
-    face.receive(certificate);
+    auto cert = m_keyChain.makeCertificate(requestedKey, si);
+    face.receive(cert);
   };
 
   Data data("/Security/ValidatorFixture/Sub1/Sub2/Data");
-  m_keyChain.sign(data, signingByIdentity(subIdentity));
+  m_keyChain.sign(data, signingByIdentity(subIdentity).setSignatureInfo(
+                        SignatureInfo().setKeyLocator(subIdentity.getDefaultKey().getName())));
 
   validator.setMaxDepth(40);
   BOOST_CHECK_EQUAL(validator.getMaxDepth(), 40);
@@ -307,32 +291,32 @@ BOOST_AUTO_TEST_CASE(InfiniteCertChain)
 
 BOOST_AUTO_TEST_CASE(LoopedCertChain)
 {
-  auto s1 = addIdentity("/loop");
+  auto s1 = m_keyChain.createIdentity("/loop");
   auto k1 = m_keyChain.createKey(s1, RsaKeyParams(name::Component("key1")));
   auto k2 = m_keyChain.createKey(s1, RsaKeyParams(name::Component("key2")));
   auto k3 = m_keyChain.createKey(s1, RsaKeyParams(name::Component("key3")));
 
-  auto makeCert = [this] (Key& key, const Key& signer) {
-    v2::Certificate request = key.getDefaultCertificate();
-    request.setName(Name(key.getName()).append("looper").appendVersion());
+  auto makeLoopCert = [this] (Key& key, const Key& signer) {
+    SignatureInfo sigInfo;
+    sigInfo.setKeyLocator(signer.getName());
+    auto si = signingByKey(signer).setSignatureInfo(sigInfo);
 
-    SignatureInfo info;
-    info.setValidityPeriod(ValidityPeriod(time::system_clock::now() - 100_days,
-                                          time::system_clock::now() + 100_days));
-    m_keyChain.sign(request, signingByKey(signer).setSignatureInfo(info));
-    m_keyChain.addCertificate(key, request);
-
-    cache.insert(request);
+    auto cert = m_keyChain.makeCertificate(key, si);
+    m_keyChain.setDefaultCertificate(key, cert);
+    cache.insert(cert);
   };
 
-  makeCert(k1, k2);
-  makeCert(k2, k3);
-  makeCert(k3, k1);
+  makeLoopCert(k1, k2);
+  makeLoopCert(k2, k3);
+  makeLoopCert(k3, k1);
 
   Data data("/loop/Data");
   m_keyChain.sign(data, signingByKey(k1));
   VALIDATE_FAILURE(data, "Should fail, as certificate chain loops");
-  BOOST_CHECK_EQUAL(face.sentInterests.size(), 3);
+  BOOST_REQUIRE_EQUAL(face.sentInterests.size(), 3);
+  BOOST_CHECK_EQUAL(face.sentInterests[0].getName(), k1.getDefaultCertificate().getName());
+  BOOST_CHECK_EQUAL(face.sentInterests[1].getName(), k2.getName());
+  BOOST_CHECK_EQUAL(face.sentInterests[2].getName(), k3.getName());
 }
 
 BOOST_AUTO_TEST_SUITE_END() // TestValidator

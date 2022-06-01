@@ -3,7 +3,7 @@
 from waflib import Context, Logs, Utils
 import os, subprocess
 
-VERSION = '0.7.1'
+VERSION = '22.02'
 APPNAME = 'ndn-tools'
 GIT_TAG_PREFIX = 'ndn-tools-'
 
@@ -27,8 +27,9 @@ def configure(conf):
 
     conf.env.WITH_TESTS = conf.options.with_tests
 
-    conf.check_cfg(package='libndn-cxx', args=['--cflags', '--libs'], uselib_store='NDN_CXX',
-                   pkg_config_path=os.environ.get('PKG_CONFIG_PATH', '%s/pkgconfig' % conf.env.LIBDIR))
+    pkg_config_path = os.environ.get('PKG_CONFIG_PATH', f'{conf.env.LIBDIR}/pkgconfig')
+    conf.check_cfg(package='libndn-cxx', args=['libndn-cxx >= 0.8.0', '--cflags', '--libs'],
+                   uselib_store='NDN_CXX', pkg_config_path=pkg_config_path)
 
     boost_libs = ['system', 'program_options', 'filesystem']
     if conf.env.WITH_TESTS:
@@ -36,14 +37,10 @@ def configure(conf):
         conf.define('WITH_TESTS', 1)
 
     conf.check_boost(lib=boost_libs, mt=True)
-    if conf.env.BOOST_VERSION_NUMBER < 105800:
+    if conf.env.BOOST_VERSION_NUMBER < 106501:
         conf.fatal('The minimum supported version of Boost is 1.65.1.\n'
                    'Please upgrade your distribution or manually install a newer version of Boost.\n'
                    'For more information, see https://redmine.named-data.net/projects/nfd/wiki/Boost')
-    elif conf.env.BOOST_VERSION_NUMBER < 106501:
-        Logs.warn('WARNING: Using a version of Boost older than 1.65.1 is not officially supported and may not work.\n'
-                  'If you encounter any problems, please upgrade your distribution or manually install a newer version of Boost.\n'
-                  'For more information, see https://redmine.named-data.net/projects/nfd/wiki/Boost')
 
     conf.recurse('tools')
 
@@ -64,11 +61,15 @@ def build(bld):
         target='core/version.cpp',
         VERSION_BUILD=VERSION)
 
-    bld.objects(target='core-objects',
-                source=bld.path.ant_glob('core/*.cpp') + ['core/version.cpp'],
-                use='NDN_CXX BOOST',
-                includes='.',
-                export_includes='.')
+    bld.objects(
+        target='core-objects',
+        source=bld.path.find_node('core').ant_glob('*.cpp') + ['core/version.cpp'],
+        use='NDN_CXX BOOST',
+        includes='.',
+        export_includes='.')
+
+    bld.recurse('tools')
+    bld.recurse('tests')
 
     if Utils.unversioned_sys_platform() == 'linux':
         systemd_units = bld.path.ant_glob('systemd/*.in')
@@ -76,9 +77,6 @@ def build(bld):
             name='systemd-units',
             source=systemd_units,
             target=[u.change_ext('') for u in systemd_units])
-
-    bld.recurse('tools')
-    bld.recurse('tests')
 
     if bld.env.SPHINX_BUILD:
         bld(features='sphinx',

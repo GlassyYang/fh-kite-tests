@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,14 +19,14 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_MGMT_NFD_CONTROLLER_HPP
-#define NDN_MGMT_NFD_CONTROLLER_HPP
+#ifndef NDN_CXX_MGMT_NFD_CONTROLLER_HPP
+#define NDN_CXX_MGMT_NFD_CONTROLLER_HPP
 
 #include "ndn-cxx/mgmt/nfd/command-options.hpp"
 #include "ndn-cxx/mgmt/nfd/control-command.hpp"
 #include "ndn-cxx/mgmt/nfd/control-response.hpp"
 #include "ndn-cxx/mgmt/nfd/status-dataset.hpp"
-#include "ndn-cxx/security/command-interest-signer.hpp"
+#include "ndn-cxx/security/interest-signer.hpp"
 #include "ndn-cxx/security/key-chain.hpp"
 #include "ndn-cxx/security/validator-null.hpp"
 #include "ndn-cxx/security/validator.hpp"
@@ -67,7 +67,7 @@ public:
    *         and uses the passed KeyChain to sign commands
    */
   Controller(Face& face, KeyChain& keyChain,
-             security::v2::Validator& validator = security::getAcceptAllValidator());
+             security::Validator& validator = security::getAcceptAllValidator());
 
   ~Controller();
 
@@ -173,8 +173,8 @@ public:
 protected:
   Face& m_face;
   KeyChain& m_keyChain;
-  security::v2::Validator& m_validator;
-  security::CommandInterestSigner m_signer;
+  security::Validator& m_validator;
+  security::InterestSigner m_signer;
 
 NDN_CXX_PUBLIC_WITH_TESTS_ELSE_PROTECTED:
   std::set<shared_ptr<util::SegmentFetcher>> m_fetchers;
@@ -220,4 +220,4 @@ Controller::processDatasetResponse(shared_ptr<Dataset> dataset,
 } // namespace nfd
 } // namespace ndn
 
-#endif // NDN_MGMT_NFD_CONTROLLER_HPP
+#endif // NDN_CXX_MGMT_NFD_CONTROLLER_HPP

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -27,6 +27,7 @@
 #include "ndn-cxx/encoding/buffer.hpp"
 #include "ndn-cxx/encoding/encoding-buffer-fwd.hpp"
 #include "ndn-cxx/encoding/tlv.hpp"
+#include "ndn-cxx/util/span.hpp"
 
 namespace boost {
 namespace asio {
@@ -36,12 +37,15 @@ class const_buffer;
 
 namespace ndn {
 
-/** @brief Represents a TLV element of the NDN packet format.
- *  @sa https://named-data.net/doc/NDN-packet-spec/0.3/tlv.html#tlv-encoding
+/**
+ * @brief Represents a TLV element of the NDN packet format.
+ * @sa https://named-data.net/doc/NDN-packet-spec/0.3/tlv.html
  */
 class Block
 {
 public:
+  using value_type             = Buffer::value_type;
+  using const_iterator         = Buffer::const_iterator;
   using element_container      = std::vector<Block>;
   using element_iterator       = element_container::iterator;
   using element_const_iterator = element_container::const_iterator;
@@ -76,6 +80,15 @@ public: // construction, assignment
   Block&
   operator=(Block&&) noexcept;
 
+  /** @brief Parse Block from a byte range
+   *  @param buffer sequence of bytes containing a TLV element; the element must be found at
+   *                the beginning of the buffer but does not need to span the entire buffer
+   *  @throw tlv::Error Type-Length parsing fails, or TLV-LENGTH exceeds the size of @p buffer
+   *  @note This constructor copies the TLV element octets to an internal buffer.
+   */
+  explicit
+  Block(span<const uint8_t> buffer);
+
   /** @brief Parse Block from an EncodingBuffer
    *  @param buffer an EncodingBuffer containing one TLV element
    *  @throw tlv::Error Type-Length parsing fails, or TLV-LENGTH does not match size of TLV-VALUE
@@ -85,8 +98,8 @@ public: // construction, assignment
 
   /** @brief Parse Block from a wire Buffer
    *  @param buffer a Buffer containing one TLV element
-   *  @note This constructor takes shared ownership of @p buffer.
    *  @throw tlv::Error Type-Length parsing fails, or TLV-LENGTH does not match size of TLV-VALUE
+   *  @note This constructor takes shared ownership of @p buffer.
    */
   explicit
   Block(const ConstBufferPtr& buffer);
@@ -98,7 +111,6 @@ public: // construction, assignment
    *  @param verifyLength if true, check TLV-LENGTH equals size of TLV-VALUE
    *  @throw std::invalid_argument @p buffer is empty, or [@p begin,@p end) range is not within @p buffer
    *  @throw tlv::Error Type-Length parsing fails, or TLV-LENGTH does not match size of TLV-VALUE
-   *  @note This overload automatically detects TLV-TYPE and position of TLV-VALUE.
    */
   Block(ConstBufferPtr buffer, Buffer::const_iterator begin, Buffer::const_iterator end,
         bool verifyLength = true);
@@ -111,7 +123,7 @@ public: // construction, assignment
    *  @throw std::invalid_argument [@p begin,@p end) range is not within @p block
    *  @throw tlv::Error Type-Length parsing fails, or TLV-LENGTH does not match size of TLV-VALUE
    */
-  Block(const Block& block, Buffer::const_iterator begin, Buffer::const_iterator end,
+  Block(const Block& block, Block::const_iterator begin, Block::const_iterator end,
         bool verifyLength = true);
 
   /** @brief Create a Block from a wire Buffer without parsing
@@ -125,14 +137,6 @@ public: // construction, assignment
   Block(ConstBufferPtr buffer, uint32_t type,
         Buffer::const_iterator begin, Buffer::const_iterator end,
         Buffer::const_iterator valueBegin, Buffer::const_iterator valueEnd);
-
-  /** @brief Parse Block from a raw buffer
-   *  @param buf pointer to the first octet of a TLV element
-   *  @param bufSize size of the raw buffer; may be greater than the actual size of the TLV element
-   *  @throw tlv::Error Type-Length parsing fails, or size of TLV-VALUE exceeds @p bufSize
-   *  @note This overload copies the TLV element octets into an internal wire buffer.
-   */
-  Block(const uint8_t* buf, size_t bufSize);
 
   /** @brief Create a zero-length Block with the specified TLV-TYPE
    *  @param type TLV-TYPE
@@ -152,31 +156,31 @@ public: // construction, assignment
    */
   Block(uint32_t type, const Block& value);
 
+  /** @brief Try to parse Block from a wire buffer
+   *  @param buffer a Buffer containing a TLV element at offset @p offset
+   *  @param offset begin position of the TLV element within @p buffer
+   *  @return `true` and the parsed Block if parsing succeeds; otherwise `false` and an invalid Block
+   *  @note This function does not throw upon decoding failure.
+   */
+  NDN_CXX_NODISCARD static std::tuple<bool, Block>
+  fromBuffer(ConstBufferPtr buffer, size_t offset = 0);
+
+  /** @brief Try to parse Block from a byte range
+   *  @param buffer sequence of bytes containing a TLV element; the element must be found at
+   *                the beginning of the buffer but does not need to span the entire buffer
+   *  @return `true` and the parsed Block if parsing succeeds; otherwise `false` and an invalid Block
+   *  @note This overload copies the TLV element octets to an internal buffer.
+   *  @note This function does not throw upon decoding failure.
+   */
+  NDN_CXX_NODISCARD static std::tuple<bool, Block>
+  fromBuffer(span<const uint8_t> buffer);
+
   /** @brief Parse Block from an input stream
    *  @throw tlv::Error TLV-LENGTH is zero or exceeds upper bound
    *  @warning If decoding fails, bytes are still consumed from the input stream.
    */
   static Block
   fromStream(std::istream& is);
-
-  /** @brief Try to parse Block from a wire buffer
-   *  @param buffer a Buffer containing a TLV element at offset @p offset
-   *  @param offset begin position of the TLV element within @p buffer
-   *  @note This function does not throw upon decoding failure.
-   *  @return `true` and the parsed Block if parsing succeeds; otherwise `false` and an invalid Block
-   */
-  NDN_CXX_NODISCARD static std::tuple<bool, Block>
-  fromBuffer(ConstBufferPtr buffer, size_t offset);
-
-  /** @brief Try to parse Block from a raw buffer
-   *  @param buf pointer to the first octet of a TLV element
-   *  @param bufSize size of the raw buffer; may be greater than the actual size of the TLV element
-   *  @note This function does not throw upon decoding failure.
-   *  @note This overload copies the TLV element octets into an internal wire buffer.
-   *  @return `true` and the parsed Block if parsing succeeds; otherwise `false` and an invalid Block
-   */
-  NDN_CXX_NODISCARD static std::tuple<bool, Block>
-  fromBuffer(const uint8_t* buf, size_t bufSize);
 
 public: // wire format
   /** @brief Check if the Block is valid
@@ -222,25 +226,36 @@ public: // wire format
   /** @brief Get begin iterator of encoded wire
    *  @pre `hasWire() == true`
    */
-  Buffer::const_iterator
+  const_iterator
   begin() const;
 
   /** @brief Get end iterator of encoded wire
    *  @pre `hasWire() == true`
    */
-  Buffer::const_iterator
+  const_iterator
   end() const;
 
-  /** @brief Return a raw pointer to the beginning of the encoded wire
-   *  @pre `hasWire() == true`
-   *  @sa value()
+  /**
+   * @brief Return a raw pointer to the beginning of the encoded wire
+   * @pre `hasWire() == true`
+   * @sa value()
    */
   const uint8_t*
-  wire() const;
+  data() const;
 
-  /** @brief Return the size of the encoded wire, i.e. of the whole TLV
-   *  @pre `isValid() == true`
-   *  @sa value_size()
+  /**
+   * @deprecated Use data()
+   */
+  const uint8_t*
+  wire() const
+  {
+    return data();
+  }
+
+  /**
+   * @brief Return the size of the encoded wire, i.e., of the whole TLV
+   * @pre `isValid() == true`
+   * @sa value_size()
    */
   size_t
   size() const;
@@ -254,21 +269,23 @@ public: // wire format
   }
 
 public: // type and value
-  /** @brief Return the TLV-TYPE of the Block
-   *  @note This will return tlv::Invalid if isValid() is false.
+  /**
+   * @brief Return the TLV-TYPE of the Block
+   * @note This will return tlv::Invalid if isValid() is false.
    */
   uint32_t
-  type() const
+  type() const noexcept
   {
     return m_type;
   }
 
-  /** @brief Check if the Block has a non-empty TLV-VALUE
+  /**
+   * @brief Check if the Block has a non-empty TLV-VALUE
    *
-   *  This property reflects whether the underlying buffer contains a TLV-VALUE. If this is false,
-   *  TLV-VALUE has zero-length. If this is true, TLV-VALUE may be zero-length.
+   * This property reflects whether the underlying buffer contains a TLV-VALUE. If this is false,
+   * TLV-VALUE has zero-length. If this is true, TLV-VALUE may be zero-length.
    *
-   *  @sa value_size()
+   * @sa value_size()
    */
   bool
   hasValue() const noexcept
@@ -276,36 +293,59 @@ public: // type and value
     return m_buffer != nullptr;
   }
 
-  /** @brief Get begin iterator of TLV-VALUE
-   *  @pre `hasValue() == true`
+  /**
+   * @brief Get begin iterator of TLV-VALUE
+   * @pre `hasValue() == true`
    */
-  Buffer::const_iterator
-  value_begin() const
+  const_iterator
+  value_begin() const noexcept
   {
     return m_valueBegin;
   }
 
-  /** @brief Get end iterator of TLV-VALUE
-   *  @pre `hasValue() == true`
+  /**
+   * @brief Get end iterator of TLV-VALUE
+   * @pre `hasValue() == true`
    */
-  Buffer::const_iterator
-  value_end() const
+  const_iterator
+  value_end() const noexcept
   {
     return m_valueEnd;
   }
 
-  /** @brief Return a raw pointer to the beginning of TLV-VALUE
-   *  @sa wire()
+  /**
+   * @brief Return the size of TLV-VALUE, i.e., the TLV-LENGTH
+   * @sa size()
+   */
+  size_t
+  value_size() const noexcept
+  {
+    return hasValue() ? static_cast<size_t>(m_valueEnd - m_valueBegin) : 0;
+  }
+
+  /**
+   * @brief Return a read-only view of TLV-VALUE as a contiguous range of bytes
+   */
+  span<const uint8_t>
+  value_bytes() const noexcept
+  {
+    if (hasValue())
+      return {m_valueBegin, m_valueEnd};
+    else
+      return {};
+  }
+
+  /**
+   * @brief Return a raw pointer to the beginning of TLV-VALUE
+   * @sa value_bytes(), data()
    */
   const uint8_t*
   value() const noexcept;
 
-  /** @brief Return the size of TLV-VALUE, aka TLV-LENGTH
-   *  @sa size()
+  /**
+   * @brief Return a new Block constructed from the TLV-VALUE of this Block
+   * @pre `value_size() > 0`
    */
-  size_t
-  value_size() const noexcept;
-
   Block
   blockFromValue() const;
 
@@ -358,10 +398,17 @@ public: // sub-elements
   element_iterator
   erase(element_const_iterator first, element_const_iterator last);
 
-  /** @brief Append a sub-element
+  /**
+   * @brief Append a sub-element.
    */
   void
   push_back(const Block& element);
+
+  /**
+   * @brief Append a sub-element.
+   */
+  void
+  push_back(Block&& element);
 
   /** @brief Insert a sub-element
    *  @param pos position of the new sub-element
@@ -494,14 +541,14 @@ operator!=(const Block& lhs, const Block& rhs)
  *  @throw std::invalid_argument input is empty or has an odd number of hexadecimal digits.
  *  @throw tlv::Error @p input cannot be parsed into a valid Block.
  *
- *  Example
+ *  Example:
  *  @code
  *  Block nameBlock = "0706 080141 080142"_block;
  *  Block nackBlock = "FD032005 reason(no-route)=FD03210196"_block;
  *  @endcode
  */
 Block
-operator "" _block(const char* input, std::size_t len);
+operator ""_block(const char* input, std::size_t len);
 
 } // namespace ndn
 

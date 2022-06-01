@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -23,7 +23,7 @@
 #define NDN_CXX_UTIL_SCOPE_HPP
 
 #define scope_CONFIG_SELECT_SCOPE scope_SCOPE_NONSTD
-#include "ndn-cxx/util/nonstd/scope-lite.hpp"
+#include "ndn-cxx/detail/nonstd/scope-lite.hpp"
 
 namespace ndn {
 

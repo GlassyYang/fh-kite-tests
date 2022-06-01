@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -31,8 +31,6 @@
 
 namespace ndn {
 
-class Signature;
-
 /** @brief Represents a %Data packet.
  *  @sa https://named-data.net/doc/NDN-packet-spec/0.3/data.html
  */
@@ -62,36 +60,39 @@ public:
   explicit
   Data(const Block& wire);
 
-  /** @brief Prepend wire encoding to @p encoder
-   *  @param encoder EncodingEstimator or EncodingBuffer instance.
-   *  @param wantUnsignedPortionOnly If true, prepend only Name, MetaInfo, Content, and
-   *         SignatureInfo to @p encoder, but omit SignatureValue and the outermost TLV
-   *         Type and Length of the Data element. This is intended to be used with
-   *         wireEncode(EncodingBuffer&, const Block&) const.
-   *  @throw Error %Signature is not present and @p wantUnsignedPortionOnly is false.
+  /**
+   * @brief Prepend wire encoding to @p encoder.
+   * @param encoder EncodingEstimator or EncodingBuffer instance.
+   * @param wantUnsignedPortionOnly If true, prepend only Name, MetaInfo, Content, and
+   *        SignatureInfo to @p encoder, but omit SignatureValue and the outermost TLV
+   *        Type and Length of the %Data element. This is intended to be used with
+   *        wireEncode(EncodingBuffer&, span<const uint8_t>) const.
+   * @throw Error Signature is not present and @p wantUnsignedPortionOnly is false.
    */
   template<encoding::Tag TAG>
   size_t
   wireEncode(EncodingImpl<TAG>& encoder, bool wantUnsignedPortionOnly = false) const;
 
-  /** @brief Finalize Data packet encoding with the specified SignatureValue
-   *  @param encoder EncodingBuffer containing Name, MetaInfo, Content, and SignatureInfo, but
-   *                 without SignatureValue and the outermost Type-Length of the Data element.
-   *  @param signatureValue SignatureValue element.
+  /**
+   * @brief Finalize Data packet encoding with the specified signature.
+   * @param encoder EncodingBuffer containing Name, MetaInfo, Content, and SignatureInfo, but
+   *                without SignatureValue and the outermost Type-Length of the %Data element.
+   * @param signature Raw signature bytes, without TLV Type and Length; this will become the
+   *                  TLV-VALUE of the SignatureValue element added to the packet.
    *
-   *  This method is intended to be used in concert with `wireEncode(encoder, true)`, e.g.:
-   *  @code
-   *     Data data;
-   *     ...
-   *     EncodingBuffer encoder;
-   *     data.wireEncode(encoder, true);
-   *     ...
-   *     Block signatureValue = <sign_over_unsigned_portion>(encoder.buf(), encoder.size());
-   *     data.wireEncode(encoder, signatureValue)
-   *  @endcode
+   * This method is intended to be used in concert with `wireEncode(encoder, true)`, e.g.:
+   * @code
+   * Data data;
+   * ...
+   * EncodingBuffer encoder;
+   * data.wireEncode(encoder, true);
+   * ...
+   * auto signature = create_signature_over_signed_portion(encoder.data(), encoder.size());
+   * data.wireEncode(encoder, signature);
+   * @endcode
    */
   const Block&
-  wireEncode(EncodingBuffer& encoder, const Block& signatureValue) const;
+  wireEncode(EncodingBuffer& encoder, span<const uint8_t> signature) const;
 
   /** @brief Encode into a Block.
    *  @pre Data must be signed.
@@ -163,10 +164,12 @@ public: // Data fields
    * If the element is not present (hasContent() == false), an invalid Block will be returned.
    *
    * The value of the returned Content Block (if valid) can be accessed through
-   * Block::value() / Block::value_size() or Block::value_begin() / Block::value_end().
+   *   - Block::value_bytes(), or
+   *   - Block::value() and Block::value_size(), or
+   *   - Block::value_begin() and Block::value_end().
    *
    * @sa hasContent()
-   * @sa Block::blockFromValue(), Block::parse()
+   * @sa Block::value_bytes(), Block::blockFromValue(), Block::parse()
    */
   const Block&
   getContent() const noexcept
@@ -186,11 +189,21 @@ public: // Data fields
   setContent(const Block& block);
 
   /**
+   * @brief Set Content by copying from a contiguous sequence of bytes
+   * @param value buffer with the TLV-VALUE of the content
+   * @return a reference to this Data, to allow chaining
+   */
+  Data&
+  setContent(span<const uint8_t> value);
+
+  /**
    * @brief Set Content by copying from a raw buffer
    * @param value buffer with the TLV-VALUE of the content; may be nullptr if @p length is zero
    * @param length size of the buffer
    * @return a reference to this Data, to allow chaining
+   * @deprecated Use setContent(span<const uint8_t>)
    */
+  [[deprecated("use the overload that takes a span<>")]]
   Data&
   setContent(const uint8_t* value, size_t length);
 
@@ -209,21 +222,6 @@ public: // Data fields
    */
   Data&
   unsetContent();
-
-  /** @brief Get Signature
-   *  @deprecated Use getSignatureInfo and getSignatureValue
-   */
-  [[deprecated("use getSignatureInfo and getSignatureValue")]]
-  Signature
-  getSignature() const;
-
-  /** @brief Set Signature
-   *  @deprecated Use setSignatureInfo and setSignatureValue
-   *  @return a reference to this Data, to allow chaining
-   */
-  [[deprecated("use setSignatureInfo and setSignatureValue")]]
-  Data&
-  setSignature(const Signature& signature);
 
   /** @brief Get SignatureInfo
    */
@@ -245,7 +243,8 @@ public: // Data fields
   Data&
   setSignatureInfo(const SignatureInfo& info);
 
-  /** @brief Get SignatureValue
+  /**
+   * @brief Get the SignatureValue element.
    */
   const Block&
   getSignatureValue() const noexcept
@@ -253,14 +252,28 @@ public: // Data fields
     return m_signatureValue;
   }
 
-  /** @brief Set SignatureValue
-   *  @param value buffer containing the TLV-VALUE of the SignatureValue; must not be nullptr
+  /**
+   * @brief Set SignatureValue by copying from a contiguous sequence of bytes.
+   * @param value buffer from which the TLV-VALUE of the SignatureValue will be copied
+   * @return a reference to this Data, to allow chaining
    *
-   *  This is a low-level function that should not normally be called directly by applications.
-   *  Instead, use KeyChain::sign() to sign the packet.
+   * This is a low-level function that should not normally be called directly by applications.
+   * Instead, use KeyChain::sign() to sign the packet.
    *
-   *  @return a reference to this Data, to allow chaining
-   *  @warning SignatureValue is overwritten when the packet is signed via KeyChain::sign().
+   * @warning SignatureValue is overwritten when the packet is signed via KeyChain::sign().
+   */
+  Data&
+  setSignatureValue(span<const uint8_t> value);
+
+  /**
+   * @brief Set SignatureValue from a shared buffer.
+   * @param value buffer containing the TLV-VALUE of the SignatureValue; must not be nullptr
+   * @return a reference to this Data, to allow chaining
+   *
+   * This is a low-level function that should not normally be called directly by applications.
+   * Instead, use KeyChain::sign() to sign the packet.
+   *
+   * @warning SignatureValue is overwritten when the packet is signed via KeyChain::sign().
    */
   Data&
   setSignatureValue(ConstBufferPtr value);
@@ -333,7 +346,7 @@ private:
   Block m_signatureValue;
 
   mutable Block m_wire;
-  mutable Name m_fullName; ///< cached FullName computed from m_wire
+  mutable Name m_fullName; // cached FullName computed from m_wire
 };
 
 #ifndef DOXYGEN

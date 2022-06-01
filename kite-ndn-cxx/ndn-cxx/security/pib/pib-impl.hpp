@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_PIB_PIB_IMPL_HPP
-#define NDN_SECURITY_PIB_PIB_IMPL_HPP
+#ifndef NDN_CXX_SECURITY_PIB_PIB_IMPL_HPP
+#define NDN_CXX_SECURITY_PIB_PIB_IMPL_HPP
 
 #include "ndn-cxx/security/pib/pib.hpp"
 #include "ndn-cxx/security/certificate.hpp"
@@ -32,27 +32,28 @@ namespace security {
 namespace pib {
 
 /**
- * @brief Abstract class of PIB implementation
+ * @brief PIB backend interface.
  *
- * This class defines the interface that an actual PIB (e.g., one based on sqlite3)
- * implementation should provide.
+ * This abstract class defines the interface that an actual PIB implementation
+ * (e.g., one based on sqlite3) must provide.
+ *
+ * @sa Pib
  */
 class PibImpl : noncopyable
 {
 public:
   /**
-   * @brief represents a non-semantic error
+   * @brief Represents a non-semantic error.
    *
    * A subclass of PibImpl may throw a subclass of this type when
    * there's a non-semantic error, such as a storage problem.
-  */
+   */
   class Error : public std::runtime_error
   {
   public:
     using std::runtime_error::runtime_error;
   };
 
-public:
   virtual
   ~PibImpl() = default;
 
@@ -151,13 +152,12 @@ public: // Key management
    * one as default key of the identity.  If no default identity has been set, @p identity
    * becomes the default.
    *
-   * @param identity The name of the belonged identity.
+   * @param identity The name of the identity that will own the added key.
    * @param keyName The key name.
    * @param key The public key bits.
-   * @param keyLen The length of the public key.
    */
   virtual void
-  addKey(const Name& identity, const Name& keyName, const uint8_t* key, size_t keyLen) = 0;
+  addKey(const Name& identity, const Name& keyName, span<const uint8_t> key) = 0;
 
   /**
    * @brief Remove a key with @p keyName and related certificates
@@ -226,7 +226,7 @@ public: // Certificate Management
    * @param certificate The certificate to add.
    */
   virtual void
-  addCertificate(const v2::Certificate& certificate) = 0;
+  addCertificate(const Certificate& certificate) = 0;
 
   /**
    * @brief Remove a certificate with name @p certName.
@@ -245,7 +245,7 @@ public: // Certificate Management
    * @return the certificate.
    * @throw Pib::Error the certificate does not exist.
    */
-  virtual v2::Certificate
+  virtual Certificate
   getCertificate(const Name& certName) const = 0;
 
   /**
@@ -272,7 +272,7 @@ public: // Certificate Management
    *
    * @throw Pib::Error the default certificate does not exist.
    */
-  virtual v2::Certificate
+  virtual Certificate
   getDefaultCertificateOfKey(const Name& keyName) const = 0;
 };
 
@@ -280,4 +280,4 @@ public: // Certificate Management
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_PIB_PIB_IMPL_HPP
+#endif // NDN_CXX_SECURITY_PIB_PIB_IMPL_HPP

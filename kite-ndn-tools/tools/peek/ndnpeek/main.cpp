@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -28,21 +28,25 @@
  */
 
 #include "ndnpeek.hpp"
+#include "core/program-options-ext.hpp"
 #include "core/version.hpp"
 
 #include <ndn-cxx/util/io.hpp>
+
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options/parsers.hpp>
+#include <boost/program_options/variables_map.hpp>
 
 #include <cerrno>
 #include <cstring>
 #include <fstream>
 
-namespace ndn {
-namespace peek {
+namespace ndn::peek {
 
 namespace po = boost::program_options;
 
 static void
-usage(std::ostream& os, const std::string& program, const po::options_description& options)
+usage(std::ostream& os, std::string_view program, const po::options_description& options)
 {
   os << "Usage: " << program << " [options] /name\n"
      << "\n"
@@ -81,7 +85,8 @@ main(int argc, char* argv[])
   interestOptDesc.add_options()
     ("prefix,P",   po::bool_switch(&options.canBePrefix), "set CanBePrefix")
     ("fresh,f",    po::bool_switch(&options.mustBeFresh), "set MustBeFresh")
-    ("link-file",  po::value<std::string>(), "set ForwardingHint from a raw binary file")
+    ("fwhint,F",   po::value<std::vector<Name>>(&options.forwardingHint)->composing(),
+                   "add ForwardingHint delegation name")
     ("lifetime,l", po::value<time::milliseconds::rep>()->default_value(options.interestLifetime.count()),
                    "set InterestLifetime, in milliseconds")
     ("rv,r", po::value<std::string>(), "kite rv forwarding hint, default no kite forwarding hint")
@@ -95,7 +100,7 @@ main(int argc, char* argv[])
 
   po::options_description hiddenOptDesc;
   hiddenOptDesc.add_options()
-    ("name", po::value<std::string>(), "Interest name");
+    ("name", po::value<Name>(&options.name), "Interest name");
 
   po::options_description optDesc;
   optDesc.add(visibleOptDesc).add(hiddenOptDesc);
@@ -129,14 +134,6 @@ main(int argc, char* argv[])
     return 2;
   }
 
-  try {
-    options.name = vm["name"].as<std::string>();
-  }
-  catch (const Name::Error& e) {
-    std::cerr << "ERROR: invalid name: " << e.what() << std::endl;
-    return 2;
-  }
-
   if (vm.count("timeout") > 0) {
     options.timeout = time::milliseconds(vm["timeout"].as<time::milliseconds::rep>());
     if (*options.timeout < 0_ms) {
@@ -147,19 +144,6 @@ main(int argc, char* argv[])
 
   if(vm.count("rv") > 0) {
     options.kiteHint = vm["rv"].as<std::string>();
-  }
-
-  if (vm.count("link-file") > 0) {
-    auto filename = vm["link-file"].as<std::string>();
-    std::ifstream linkFile = openBinaryFile(filename);
-    if (!linkFile) {
-      return 2;
-    }
-    options.link = io::load<Link>(linkFile, io::NO_ENCODING);
-    if (!options.link) {
-      std::cerr << "ERROR: cannot parse a valid Link object from file '" << filename << "'" << std::endl;
-      return 2;
-    }
   }
 
   options.interestLifetime = time::milliseconds(vm["lifetime"].as<time::milliseconds::rep>());
@@ -223,8 +207,7 @@ main(int argc, char* argv[])
   }
 }
 
-} // namespace peek
-} // namespace ndn
+} // namespace ndn::peek
 
 int
 main(int argc, char* argv[])

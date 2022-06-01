@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -23,7 +23,6 @@
 #include "util.hpp"
 
 #include "ndn-cxx/security/impl/openssl.hpp"
-#include "ndn-cxx/util/io.hpp"
 #include "ndn-cxx/util/scope.hpp"
 
 namespace ndn {
@@ -72,13 +71,9 @@ ndnsec_import(int argc, char** argv)
     return 0;
   }
 
-  security::v2::KeyChain keyChain;
+  KeyChain keyChain;
 
-  shared_ptr<security::SafeBag> safeBag;
-  if (input == "-")
-    safeBag = io::load<security::SafeBag>(std::cin);
-  else
-    safeBag = io::load<security::SafeBag>(input);
+  auto safeBag = loadFromFile<security::SafeBag>(input);
 
   if (password.empty()) {
     int count = 3;
@@ -91,7 +86,7 @@ ndnsec_import(int argc, char** argv)
     }
   }
 
-  keyChain.importSafeBag(*safeBag, password.data(), password.size());
+  keyChain.importSafeBag(safeBag, password.data(), password.size());
 
   return 0;
 }

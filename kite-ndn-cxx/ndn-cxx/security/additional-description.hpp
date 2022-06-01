@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_ADDITIONAL_DESCRIPTION_HPP
-#define NDN_SECURITY_ADDITIONAL_DESCRIPTION_HPP
+#ifndef NDN_CXX_SECURITY_ADDITIONAL_DESCRIPTION_HPP
+#define NDN_CXX_SECURITY_ADDITIONAL_DESCRIPTION_HPP
 
 #include "ndn-cxx/detail/common.hpp"
 #include "ndn-cxx/encoding/block.hpp"
@@ -33,8 +33,8 @@ namespace security {
 inline namespace v2 {
 
 /**
- * @brief Abstraction of AdditionalDescription
- * @sa docs/specs/certificate-format.rst
+ * @brief Represents an %AdditionalDescription TLV element.
+ * @sa <a href="../specs/certificate.html">NDN Certificate Format</a>
  */
 class AdditionalDescription
 {
@@ -142,4 +142,4 @@ operator<<(std::ostream& os, const AdditionalDescription& desc);
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_ADDITIONAL_DESCRIPTION_HPP
+#endif // NDN_CXX_SECURITY_ADDITIONAL_DESCRIPTION_HPP

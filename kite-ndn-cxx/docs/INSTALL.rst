@@ -9,19 +9,21 @@ following platforms:
 
 -  Ubuntu 18.04 (amd64, armhf, i386)
 -  Ubuntu 20.04 (amd64)
--  macOS 10.13
--  macOS 10.14
+-  Ubuntu 21.10 (amd64)
 -  macOS 10.15
+-  macOS 11 (Intel only)
 -  CentOS 8
 
 ndn-cxx is known to work on the following platforms, although they are not officially
 supported:
 
--  Debian 10 (Buster)
+-  Alpine >= 3.12
+-  Debian >= 10
 -  Fedora >= 29
 -  Gentoo Linux
--  Raspbian >= 2019-06-20 (Buster)
--  FreeBSD >= 11.3
+-  Raspberry Pi OS (formerly Raspbian) >= 2019-06-20
+-  FreeBSD >= 12.0
+-  macOS 10.14
 
 Prerequisites
 -------------
@@ -29,12 +31,12 @@ Prerequisites
 Required
 ~~~~~~~~
 
--  GCC >= 7.4 or clang >= 4.0 (on Linux and FreeBSD)
--  Xcode >= 9.0 (on macOS)
+-  GCC >= 7.4 or clang >= 6.0 (if you are on Linux or FreeBSD)
+-  Xcode >= 11.3 or corresponding version of Command Line Tools (if you are on macOS)
 -  Python >= 3.6
 -  pkg-config
 -  Boost >= 1.65.1
--  OpenSSL >= 1.0.2
+-  OpenSSL >= 1.1.1
 -  SQLite 3.x
 
 To build ndn-cxx from source, one must first install a C++ compiler and all necessary
@@ -44,7 +46,7 @@ development tools and libraries:
 
     In a terminal, enter::
 
-        sudo apt install g++ pkg-config python3-minimal libboost-all-dev libssl-dev libsqlite3-dev
+        sudo apt install build-essential pkg-config python3-minimal libboost-all-dev libssl-dev libsqlite3-dev
 
 - On **CentOS** and **Fedora**
 
@@ -57,9 +59,12 @@ development tools and libraries:
     * Install either Xcode (from the App Store) or the Command Line Tools
       (with ``xcode-select --install``)
 
-    * If using Homebrew (recommended), enter the following in a terminal::
+    * If using Homebrew (recommended), enter the following in a terminal:
+
+      .. code-block:: sh
 
         brew install boost openssl pkg-config
+        brew install python  # only on macOS 10.14 and earlier
 
       .. warning::
 
@@ -75,7 +80,7 @@ development tools and libraries:
 Optional
 ~~~~~~~~
 
-To build tutorials, manpages, and API documentation the following additional dependencies
+To build tutorials, man pages, and API documentation the following additional dependencies
 need to be installed:
 
 -  doxygen
@@ -85,18 +90,26 @@ need to be installed:
 
 The following lists the steps to install these prerequisites on various common platforms.
 
+.. note::
+  On Linux, you may need to add ``$HOME/.local/bin`` to the ``PATH`` environment variable
+  for your user, for example:
+
+  .. code-block:: sh
+
+      export PATH="${HOME}/.local/bin${PATH:+:}${PATH}"
+
 - On **Ubuntu**:
 
   .. code-block:: sh
 
     sudo apt install doxygen graphviz python3-pip
-    sudo pip3 install sphinx sphinxcontrib-doxylink
+    pip3 install --user sphinx sphinxcontrib-doxylink
 
 - On **CentOS** and **Fedora**:
 
   .. code-block:: sh
 
-    sudo dnf config-manager --enable PowerTools  # on CentOS only
+    sudo dnf config-manager --enable powertools  # on CentOS only
     sudo dnf install doxygen graphviz python3-pip
     pip3 install --user sphinx sphinxcontrib-doxylink
 
@@ -105,7 +118,7 @@ The following lists the steps to install these prerequisites on various common p
   .. code-block:: sh
 
     brew install doxygen graphviz
-    sudo pip install sphinx sphinxcontrib-doxylink
+    sudo pip3 install sphinx sphinxcontrib-doxylink
 
 - On **FreeBSD**:
 
@@ -275,9 +288,9 @@ Tutorials and API documentation can be built using the following commands:
     # Only API docs in build/docs/doxygen
     ./waf doxygen
 
-If ``sphinx-build`` is detected during ``./waf configure``, manpages will automatically
+If ``sphinx-build`` is detected during ``./waf configure``, man pages will automatically
 be built and installed during the normal build process (i.e., during ``./waf`` and
-``./waf install``). By default, manpages will be installed into ``${PREFIX}/share/man``
+``./waf install``). By default, man pages will be installed into ``${PREFIX}/share/man``
 (the default value for ``PREFIX`` is ``/usr/local``). This location can be changed
 during the ``./waf configure`` stage using the ``--prefix``, ``--datarootdir``, or
 ``--mandir`` options.

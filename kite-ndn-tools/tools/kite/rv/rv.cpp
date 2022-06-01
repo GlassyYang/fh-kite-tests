@@ -145,12 +145,10 @@ Rv::sendInterest()
   Interest interest(m_options.mpName + "");
   interest.setCanBePrefix(false);
   interest.setMustBeFresh(false);
-  Delegation dl;
-  dl.name = Name(m_options.prefixes[0]); 
-  dl.preference = tlv::ContentType_KiteAck;
-  DelegationList dll;
-  dll.insert(dl);
-  interest.setForwardingHint(dll);
+  Name fh;
+  fh.append(ndn::kite::KITE_KEYWORD);
+  fh.append(m_options.prefixes[0]); 
+  interest.setForwardingHint({fh});
   interest.setHopLimit(100);
   m_pendingInterest = m_face.expressInterest(interest,
                                              [this] (auto&&, const auto& data) { this->onData(data); },

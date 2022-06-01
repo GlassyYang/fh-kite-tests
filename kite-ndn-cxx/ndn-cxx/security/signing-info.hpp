@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_SIGNING_INFO_HPP
-#define NDN_SECURITY_SIGNING_INFO_HPP
+#ifndef NDN_CXX_SECURITY_SIGNING_INFO_HPP
+#define NDN_CXX_SECURITY_SIGNING_INFO_HPP
 
 #include "ndn-cxx/name.hpp"
 #include "ndn-cxx/signature-info.hpp"
@@ -272,21 +272,6 @@ public:
 
 public:
   /**
-   * @deprecated Use default constructor for Name
-   */
-  [[deprecated("use default constructor for Name")]]
-  static const Name&
-  getEmptyName();
-
-  /**
-   * @brief Get a SignatureInfo constructed with default values.
-   * @deprecated Use default constructor for SignatureInfo
-   */
-  [[deprecated("use default constructor for SignatureInfo")]]
-  static const SignatureInfo&
-  getEmptySignatureInfo();
-
-  /**
    * @brief A localhost identity to indicate that the signature is generated using SHA-256.
    */
   static const Name&
@@ -338,4 +323,4 @@ operator<<(std::ostream& os, const SignedInterestFormat& format);
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_SIGNING_INFO_HPP
+#endif // NDN_CXX_SECURITY_SIGNING_INFO_HPP

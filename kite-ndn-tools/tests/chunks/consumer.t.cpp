@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2016-2020, Regents of the University of California,
+ * Copyright (c) 2016-2022, Regents of the University of California,
  *                          Colorado State University,
  *                          University Pierre & Marie Curie, Sorbonne University.
  *
@@ -28,19 +28,14 @@
 #include "tools/chunks/catchunks/pipeline-interests.hpp"
 
 #include "tests/test-common.hpp"
+#include "tests/io-fixture.hpp"
 
 #include <ndn-cxx/security/validator-null.hpp>
 #include <ndn-cxx/util/dummy-client-face.hpp>
 
-#if BOOST_VERSION >= 105900
 #include <boost/test/tools/output_test_stream.hpp>
-#else
-#include <boost/test/output_test_stream.hpp>
-#endif
 
-namespace ndn {
-namespace chunks {
-namespace tests {
+namespace ndn::chunks::tests {
 
 using namespace ndn::tests;
 using boost::test_tools::output_test_stream;
@@ -74,8 +69,8 @@ BOOST_AUTO_TEST_CASE(InOrderData)
     output.flush();
 
     auto data = makeData(Name(name).appendVersion(1).appendSegment(i));
-    data->setContent(reinterpret_cast<const uint8_t*>(testStrings[i].data()),
-                     testStrings[i].size());
+    data->setContent(make_span(reinterpret_cast<const uint8_t*>(testStrings[i].data()),
+                               testStrings[i].size()));
 
     cons.m_bufferedData[i] = data;
     cons.writeInOrderData();
@@ -108,8 +103,8 @@ BOOST_AUTO_TEST_CASE(OutOfOrderData)
 
   for (size_t i = 0; i < testStrings.size(); ++i) {
     auto data = makeData(Name(name).appendVersion(1).appendSegment(i));
-    data->setContent(reinterpret_cast<const uint8_t*>(testStrings[i].data()),
-                     testStrings[i].size());
+    data->setContent(make_span(reinterpret_cast<const uint8_t*>(testStrings[i].data()),
+                               testStrings[i].size()));
 
     dataStore.push_back(data);
   }
@@ -151,10 +146,9 @@ public:
   bool isPipelineRunning = false;
 };
 
-BOOST_FIXTURE_TEST_CASE(RunBasic, UnitTestTimeFixture)
+BOOST_FIXTURE_TEST_CASE(RunBasic, IoFixture)
 {
-  boost::asio::io_service io;
-  util::DummyClientFace face(io);
+  util::DummyClientFace face(m_io);
   Options options;
   Consumer consumer(security::getAcceptAllValidator());
 
@@ -166,7 +160,7 @@ BOOST_FIXTURE_TEST_CASE(RunBasic, UnitTestTimeFixture)
   BOOST_CHECK_EQUAL(pipelinePtr->isPipelineRunning, false);
 
   consumer.run(std::move(discover), std::move(pipeline));
-  this->advanceClocks(io, 1_ms);
+  this->advanceClocks(1_ms);
 
   BOOST_CHECK_EQUAL(face.sentInterests.size(), 0); // no discovery Interests are issued
   BOOST_CHECK_EQUAL(pipelinePtr->isPipelineRunning, true);
@@ -175,6 +169,4 @@ BOOST_FIXTURE_TEST_CASE(RunBasic, UnitTestTimeFixture)
 BOOST_AUTO_TEST_SUITE_END() // TestConsumer
 BOOST_AUTO_TEST_SUITE_END() // Chunks
 
-} // namespace tests
-} // namespace chunks
-} // namespace ndn
+} // namespace ndn::chunks::tests

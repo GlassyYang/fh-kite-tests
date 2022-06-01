@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2019,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -31,20 +31,17 @@
 #include "fw/access-strategy.hpp"
 #include "fw/asf-strategy.hpp"
 #include "fw/best-route-strategy.hpp"
-#include "fw/best-route-strategy2.hpp"
 #include "fw/multicast-strategy.hpp"
-#include "fw/ncc-strategy.hpp"
 #include "fw/self-learning-strategy.hpp"
 #include "fw/random-strategy.hpp"
 
 #include "tests/test-common.hpp"
+
 #include <boost/mpl/vector.hpp>
 
 namespace nfd {
 namespace fw {
 namespace tests {
-
-using namespace nfd::tests;
 
 BOOST_AUTO_TEST_SUITE(Fw)
 BOOST_AUTO_TEST_SUITE(TestStrategyInstantiation)
@@ -76,11 +73,9 @@ public:
 
 using Tests = boost::mpl::vector<
   Test<AccessStrategy, false, 1>,
-  Test<AsfStrategy, true, 3>,
-  Test<BestRouteStrategy, false, 1>,
-  Test<BestRouteStrategy2, false, 5>,
-  Test<MulticastStrategy, false, 3>,
-  Test<NccStrategy, false, 1>,
+  Test<AsfStrategy, true, 4>,
+  Test<BestRouteStrategy, true, 5>,
+  Test<MulticastStrategy, true, 4>,
   Test<SelfLearningStrategy, false, 1>,
   Test<RandomStrategy, false, 1>
 >;
@@ -123,6 +118,85 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(InstanceName, T, Tests)
     Name lateVersionName = T::getVersionedStrategyName(maxVersion + 1);
     BOOST_CHECK_THROW(typename T::Strategy(forwarder, lateVersionName), std::invalid_argument);
   }
+}
+
+template<typename S>
+class SuppressionParametersFixture
+{
+public:
+  std::unique_ptr<S>
+  checkValidity(const std::string& parameters, bool isCorrect)
+  {
+    Name strategyName(Name(S::getStrategyName()).append(parameters));
+    std::unique_ptr<S> strategy;
+    BOOST_TEST_CONTEXT(parameters) {
+      if (isCorrect) {
+        strategy = make_unique<S>(m_forwarder, strategyName);
+        BOOST_CHECK(strategy->m_retxSuppression != nullptr);
+      }
+      else {
+        BOOST_CHECK_THROW(make_unique<S>(m_forwarder, strategyName), std::invalid_argument);
+      }
+    }
+    return strategy;
+  }
+
+private:
+  FaceTable m_faceTable;
+  Forwarder m_forwarder{m_faceTable};
+};
+
+using StrategiesWithRetxSuppressionExponential = boost::mpl::vector<
+  AsfStrategy,
+  BestRouteStrategy,
+  MulticastStrategy
+>;
+
+BOOST_FIXTURE_TEST_CASE_TEMPLATE(SuppressionParameters, S, StrategiesWithRetxSuppressionExponential,
+                                 SuppressionParametersFixture<S>)
+{
+  auto strategy = this->checkValidity("", true);
+  BOOST_TEST(strategy->m_retxSuppression->m_initialInterval == RetxSuppressionExponential::DEFAULT_INITIAL_INTERVAL);
+  BOOST_TEST(strategy->m_retxSuppression->m_maxInterval == RetxSuppressionExponential::DEFAULT_MAX_INTERVAL);
+  BOOST_TEST(strategy->m_retxSuppression->m_multiplier == RetxSuppressionExponential::DEFAULT_MULTIPLIER);
+
+  strategy = this->checkValidity("/retx-suppression-initial~20", true);
+  BOOST_TEST(strategy->m_retxSuppression->m_initialInterval == 20_ms);
+  BOOST_TEST(strategy->m_retxSuppression->m_maxInterval == RetxSuppressionExponential::DEFAULT_MAX_INTERVAL);
+  BOOST_TEST(strategy->m_retxSuppression->m_multiplier == RetxSuppressionExponential::DEFAULT_MULTIPLIER);
+  this->checkValidity("/retx-suppression-initial~0", false);
+  this->checkValidity("/retx-suppression-initial~20.5", false);
+  this->checkValidity("/retx-suppression-initial~-10", false);
+  this->checkValidity("/retx-suppression-initial~ -5", false);
+  this->checkValidity("/retx-suppression-initial~NaN", false);
+
+  strategy = this->checkValidity("/retx-suppression-max~1000", true);
+  BOOST_TEST(strategy->m_retxSuppression->m_initialInterval == RetxSuppressionExponential::DEFAULT_INITIAL_INTERVAL);
+  BOOST_TEST(strategy->m_retxSuppression->m_maxInterval == 1_s);
+  BOOST_TEST(strategy->m_retxSuppression->m_multiplier == RetxSuppressionExponential::DEFAULT_MULTIPLIER);
+  strategy = this->checkValidity("/retx-suppression-initial~40/retx-suppression-max~500", true);
+  BOOST_TEST(strategy->m_retxSuppression->m_initialInterval == 40_ms);
+  BOOST_TEST(strategy->m_retxSuppression->m_maxInterval == 500_ms);
+  this->checkValidity("/retx-suppression-initial~20/retx-suppression-max~10", false);
+  this->checkValidity("/retx-suppression-max~ 500", false);
+  this->checkValidity("/retx-suppression-max~521.5", false);
+
+  strategy = this->checkValidity("/retx-suppression-multiplier~2.25", true);
+  BOOST_TEST(strategy->m_retxSuppression->m_initialInterval == RetxSuppressionExponential::DEFAULT_INITIAL_INTERVAL);
+  BOOST_TEST(strategy->m_retxSuppression->m_maxInterval == RetxSuppressionExponential::DEFAULT_MAX_INTERVAL);
+  BOOST_TEST(strategy->m_retxSuppression->m_multiplier == 2.25);
+  this->checkValidity("/retx-suppression-multiplier~0", false);
+  this->checkValidity("/retx-suppression-multiplier~0.9", false);
+  this->checkValidity("/retx-suppression-multiplier~-2.1", false);
+  this->checkValidity("/retx-suppression-multiplier~foo", false);
+
+  strategy = this->checkValidity("/retx-suppression-initial~20/retx-suppression-max~500/retx-suppression-multiplier~3",
+                                 true);
+  BOOST_TEST(strategy->m_retxSuppression->m_initialInterval == 20_ms);
+  BOOST_TEST(strategy->m_retxSuppression->m_maxInterval == 500_ms);
+  BOOST_TEST(strategy->m_retxSuppression->m_multiplier == 3);
+
+  this->checkValidity("/foo~42", true); // unknown parameters are ignored
 }
 
 BOOST_AUTO_TEST_SUITE_END() // TestStrategyInstantiation

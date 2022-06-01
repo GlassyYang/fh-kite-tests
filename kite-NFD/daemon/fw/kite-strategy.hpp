@@ -22,27 +22,27 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * NFD, e.g., in COPYING.md file.  If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * @author Yang Zhang <glassyyang@outlook.com>
  */
 
-#ifndef NFD_DAEMON_FW_SELF_LEARNING_STRATEGY_HPP
-#define NFD_DAEMON_FW_SELF_LEARNING_STRATEGY_HPP
+#ifndef NFD_DAEMON_FW_KITE_STRATEGY_HPP
+#define NFD_DAEMON_FW_KITE_STRATEGY_HPP
 
 #include "fw/strategy.hpp"
 #include "process-nack-traits.hpp"
 
 #include <ndn-cxx/lp/prefix-announcement-header.hpp>
 #include <ndn-cxx/kite/ack.hpp>
-namespace nfd
-{
-namespace fw
-{
+#include <ndn-cxx/kite/request.hpp>
+
+namespace nfd {
+namespace fw {
 class KiteStrategy : public Strategy,
                       public ProcessNackTraits<KiteStrategy>
 {
 public:
-  explicit KiteStrategy(Forwarder &forwarder, const Name &name = getStrategyName());
+  explicit KiteStrategy(Forwarder& forwarder, const Name& name = getStrategyName());
 
   static const Name &
   getStrategyName();
@@ -60,7 +60,7 @@ public:
   {
 
   public:
-    
+
     static constexpr int
     getTypeId()
     {
@@ -76,7 +76,7 @@ public:
   class KiteMobileProducerInfo: public StrategyInfo
   {
   public:
-    
+
     static constexpr int
     getTypeId()
     {
@@ -89,22 +89,22 @@ public:
     std::unordered_set<face::FaceId> faceIds;
   };
 
-  public: // triggers
-            void
-            afterReceiveInterest(const FaceEndpoint &ingress, const Interest &interest,
-                                const shared_ptr<pit::Entry> &pitEntry) override;
+public: // triggers
+  void
+  afterReceiveInterest(const Interest& interest, const FaceEndpoint& ingress,
+                                const shared_ptr<pit::Entry>& pitEntry) override;
 
   void
-  afterReceiveNack(const FaceEndpoint &ingress, const lp::Nack &nack,
-                    const shared_ptr<pit::Entry> &pitEntry) override;
+  afterReceiveNack(const lp::Nack& nack, const FaceEndpoint& ingress,
+                    const shared_ptr<pit::Entry>& pitEntry) override;
 
   void
-  beforeSatisfyInterest(const shared_ptr<pit::Entry> &pitEntry,
-                        const FaceEndpoint &ingress, const Data &data) override;
+  beforeSatisfyInterest(const Data& data,  const FaceEndpoint& ingress,
+                    const shared_ptr<pit::Entry>& pitEntry) override;
 
 private:
   void
-  registPrefix(const shared_ptr<pit::Entry> &pitEntry, const ndn::kite::Ack &ack);
+  registPrefix(const shared_ptr<pit::Entry>& pitEntry, const ndn::kite::Ack& ack);
   friend ProcessNackTraits<KiteStrategy>;
 
   void
@@ -116,14 +116,14 @@ private:
   void
   sendNacksForProcessNackTraits(const shared_ptr<pit::Entry>& pitEntry,
                                 const lp::NackHeader& header) override;
-  
+
   bool
   dealNack(const pit::InRecord& inRecord, const shared_ptr<pit::Entry>& pitEntry);
 
-  inline void 
+  inline void
   eraseMeasurement(const pit::OutRecord& outRecord, const Name& interestName);
 };
-}
-}
+} // namespace fw
+} // namespace nfd
 
-#endif // NFD_DAEMON_FW_SELF_LEARNING_STRATEGY_HPP
+#endif // NFD_DAEMON_FW_KITE_STRATEGY_HPP

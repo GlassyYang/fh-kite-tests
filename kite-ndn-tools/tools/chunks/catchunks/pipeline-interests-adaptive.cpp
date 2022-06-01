@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2016-2019, Regents of the University of California,
+ * Copyright (c) 2016-2022, Regents of the University of California,
  *                          Colorado State University,
  *                          University Pierre & Marie Curie, Sorbonne University.
  *
@@ -32,8 +32,7 @@
 #include <cmath>
 #include <iomanip>
 
-namespace ndn {
-namespace chunks {
+namespace ndn::chunks {
 
 constexpr double PipelineInterestsAdaptive::MIN_SSTHRESH;
 
@@ -45,19 +44,6 @@ PipelineInterestsAdaptive::PipelineInterestsAdaptive(Face& face,
   , m_ssthresh(m_options.initSsthresh)
   , m_rttEstimator(rttEstimator)
   , m_scheduler(m_face.getIoService())
-  , m_highData(0)
-  , m_highInterest(0)
-  , m_recPoint(0)
-  , m_nInFlight(0)
-  , m_nLossDecr(0)
-  , m_nMarkDecr(0)
-  , m_nTimeouts(0)
-  , m_nSkippedRetx(0)
-  , m_nRetransmitted(0)
-  , m_nCongMarks(0)
-  , m_nSent(0)
-  , m_hasFailure(false)
-  , m_failedSegNo(0)
 {
 }
 
@@ -133,13 +119,13 @@ PipelineInterestsAdaptive::sendInterest(uint64_t segNo, bool isRetransmission)
 
   if (m_options.isVerbose) {
     std::cerr << (isRetransmission ? "Retransmitting" : "Requesting")
-              << " segment #" << segNo << std::endl;
+              << " segment #" << segNo << "\n";
   }
 
   if (isRetransmission) {
     // keep track of retx count for this segment
     auto ret = m_retxCount.emplace(segNo, 1);
-    if (ret.second == false) { // not the first retransmission
+    if (!ret.second) { // not the first retransmission
       m_retxCount[segNo] += 1;
       if (m_options.maxRetriesOnTimeoutOrNack != DataFetcher::MAX_RETRIES_INFINITE &&
           m_retxCount[segNo] > m_options.maxRetriesOnTimeoutOrNack) {
@@ -150,22 +136,21 @@ PipelineInterestsAdaptive::sendInterest(uint64_t segNo, bool isRetransmission)
 
       if (m_options.isVerbose) {
         std::cerr << "# of retries for segment #" << segNo
-                  << " is " << m_retxCount[segNo] << std::endl;
+                  << " is " << m_retxCount[segNo] << "\n";
       }
     }
   }
 
   auto interest = Interest()
                   .setName(Name(m_prefix).appendSegment(segNo))
-                  .setCanBePrefix(false)
                   .setMustBeFresh(m_options.mustBeFresh)
                   .setInterestLifetime(m_options.interestLifetime);
 
   SegmentInfo& segInfo = m_segmentInfo[segNo];
   segInfo.interestHdl = m_face.expressInterest(interest,
-                                               bind(&PipelineInterestsAdaptive::handleData, this, _1, _2),
-                                               bind(&PipelineInterestsAdaptive::handleNack, this, _1, _2),
-                                               bind(&PipelineInterestsAdaptive::handleLifetimeExpiration, this, _1));
+                                               FORWARD_TO_MEM_FN(handleData),
+                                               FORWARD_TO_MEM_FN(handleNack),
+                                               FORWARD_TO_MEM_FN(handleLifetimeExpiration));
   segInfo.timeSent = time::steady_clock::now();
   segInfo.rto = m_rttEstimator.getEstimatedRto();
 
@@ -239,7 +224,7 @@ PipelineInterestsAdaptive::handleData(const Interest& interest, const Data& data
   if (m_options.isVerbose) {
     std::cerr << "Received segment #" << recvSegNo
               << ", rtt=" << rtt.count() / 1e6 << "ms"
-              << ", rto=" << segInfo.rto.count() / 1e6 << "ms" << std::endl;
+              << ", rto=" << segInfo.rto.count() / 1e6 << "ms\n";
   }
 
   if (m_highData < recvSegNo) {
@@ -265,7 +250,7 @@ PipelineInterestsAdaptive::handleData(const Interest& interest, const Data& data
 
         if (m_options.isVerbose) {
           std::cerr << "Received congestion mark, value = " << data.getCongestionMark()
-                    << ", new cwnd = " << m_cwnd << std::endl;
+                    << ", new cwnd = " << m_cwnd << "\n";
         }
       }
     }
@@ -314,7 +299,7 @@ PipelineInterestsAdaptive::handleNack(const Interest& interest, const lp::Nack& 
 
   if (m_options.isVerbose)
     std::cerr << "Received Nack with reason " << nack.getReason()
-              << " for Interest " << interest << std::endl;
+              << " for Interest " << interest << "\n";
 
   uint64_t segNo = getSegmentFromPacket(interest);
 
@@ -360,7 +345,7 @@ PipelineInterestsAdaptive::recordTimeout()
 
     if (m_options.isVerbose) {
       std::cerr << "Packet loss event, new cwnd = " << m_cwnd
-                << ", ssthresh = " << m_ssthresh << std::endl;
+                << ", ssthresh = " << m_ssthresh << "\n";
     }
   }
 }
@@ -471,5 +456,4 @@ operator<<(std::ostream& os, SegmentState state)
   return os;
 }
 
-} // namespace chunks
-} // namespace ndn
+} // namespace ndn::chunks

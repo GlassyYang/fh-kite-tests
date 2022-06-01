@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2020,  Regents of the University of California,
+ * Copyright (c) 2014-2022,  Regents of the University of California,
  *                           Arizona Board of Regents,
  *                           Colorado State University,
  *                           University Pierre & Marie Curie, Sorbonne University,
@@ -38,7 +38,8 @@ class WebSocketChannelFixture : public ChannelFixture<WebSocketChannel, websocke
 {
 protected:
   shared_ptr<WebSocketChannel>
-  makeChannel(const boost::asio::ip::address& addr, uint16_t port = 0) final
+  makeChannel(const boost::asio::ip::address& addr, uint16_t port = 0,
+              optional<size_t> mtu = nullopt) final
   {
     if (port == 0)
       port = getNextPort();
@@ -55,7 +56,7 @@ protected:
     listenerChannel = makeChannel(addr, 20030);
     listenerChannel->setPingInterval(pingInterval);
     listenerChannel->setPongTimeout(pongTimeout);
-    listenerChannel->listen(bind(&WebSocketChannelFixture::listenerOnFaceCreated, this, _1));
+    listenerChannel->listen(std::bind(&WebSocketChannelFixture::listenerOnFaceCreated, this, _1));
   }
 
   void
@@ -65,9 +66,9 @@ protected:
     client.clear_error_channels(websocketpp::log::elevel::all);
 
     client.init_asio(&g_io);
-    client.set_open_handler(bind(&WebSocketChannelFixture::clientHandleOpen, this, _1));
-    client.set_message_handler(bind(&WebSocketChannelFixture::clientHandleMessage, this, _1, _2));
-    client.set_ping_handler(bind(&WebSocketChannelFixture::clientHandlePing, this, _1, _2));
+    client.set_open_handler(std::bind(&WebSocketChannelFixture::clientHandleOpen, this, _1));
+    client.set_message_handler(std::bind(&WebSocketChannelFixture::clientHandleMessage, this, _1, _2));
+    client.set_ping_handler(std::bind(&WebSocketChannelFixture::clientHandlePing, this, _1, _2));
 
     websocketpp::lib::error_code ec;
     auto con = client.get_connection(FaceUri(listenerEp, "ws").toString(), ec);
@@ -92,7 +93,7 @@ protected:
   clientSendInterest(const Interest& interest)
   {
     const Block& payload = interest.wireEncode();
-    client.send(clientHandle, payload.wire(), payload.size(), websocketpp::frame::opcode::binary);
+    client.send(clientHandle, payload.data(), payload.size(), websocketpp::frame::opcode::binary);
   }
 
 private:
@@ -100,16 +101,12 @@ private:
   listenerOnFaceCreated(const shared_ptr<Face>& newFace)
   {
     BOOST_REQUIRE(newFace != nullptr);
-    newFace->afterReceiveInterest.connect(bind(&WebSocketChannelFixture::faceAfterReceiveInterest, this, _1));
+    newFace->afterReceiveInterest.connect([this] (const auto& interest, const auto&) {
+      faceReceivedInterests.push_back(interest);
+      limitedIo.afterOp();
+    });
     connectFaceClosedSignal(*newFace, [this] { limitedIo.afterOp(); });
     listenerFaces.push_back(newFace);
-    limitedIo.afterOp();
-  }
-
-  void
-  faceAfterReceiveInterest(const Interest& interest)
-  {
-    faceReceivedInterests.push_back(interest);
     limitedIo.afterOp();
   }
 
@@ -131,8 +128,8 @@ private:
   clientHandlePing(websocketpp::connection_hdl, std::string)
   {
     auto now = time::steady_clock::now();
-    if (m_prevPingRecvTime != time::steady_clock::TimePoint()) {
-      measuredPingInterval = now - m_prevPingRecvTime;
+    if (m_prevPingRecvTime != time::steady_clock::time_point()) {
+      measuredPingIntervals.push_back(now - m_prevPingRecvTime);
     }
     m_prevPingRecvTime = now;
 
@@ -147,13 +144,13 @@ protected:
   websocketpp::connection_hdl clientHandle;
   std::vector<std::string> clientReceivedMessages;
 
-  time::steady_clock::Duration measuredPingInterval;
+  std::vector<time::nanoseconds> measuredPingIntervals;
   // set clientShouldPong to false to disable the pong response,
   // which will eventually cause a timeout in listenerChannel
   bool clientShouldPong = true;
 
 private:
-  time::steady_clock::TimePoint m_prevPingRecvTime;
+  time::steady_clock::time_point m_prevPingRecvTime;
 };
 
 } // namespace tests

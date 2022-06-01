@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -21,11 +21,12 @@
  * @author Alexander Afanasyev <http://lasr.cs.ucla.edu/afanasyev/index.html>
  */
 
-#ifndef NDN_ENCODING_BUFFER_HPP
-#define NDN_ENCODING_BUFFER_HPP
+#ifndef NDN_CXX_ENCODING_BUFFER_HPP
+#define NDN_CXX_ENCODING_BUFFER_HPP
 
 #include "ndn-cxx/detail/common.hpp"
 
+#include <initializer_list>
 #include <vector>
 
 namespace ndn {
@@ -91,6 +92,13 @@ public:
   {
   }
 
+  /** @brief Creates a Buffer with the contents of an initializer list
+   */
+  Buffer(std::initializer_list<uint8_t> il)
+    : std::vector<uint8_t>(il)
+  {
+  }
+
   /** @return pointer to the first byte of the buffer, cast to the requested type T
    */
   template<class T>
@@ -122,9 +130,14 @@ Buffer::Buffer(Buffer&&) noexcept = default;
 inline Buffer&
 Buffer::operator=(Buffer&&) noexcept = default;
 
+/** \cond */
+std::ostream&
+boost_test_print_type(std::ostream&, const Buffer&);
+/** \endcond */
+
 using BufferPtr = shared_ptr<Buffer>;
 using ConstBufferPtr = shared_ptr<const Buffer>;
 
 } // namespace ndn
 
-#endif // NDN_ENCODING_BUFFER_HPP
+#endif // NDN_CXX_ENCODING_BUFFER_HPP

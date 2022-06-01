@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
-/**
- * Copyright (c) 2015,  Arizona Board of Regents.
+/*
+ * Copyright (c) 2015-2022,  Arizona Board of Regents.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -26,31 +26,20 @@
 
 #include "ping-server.hpp"
 
-namespace ndn {
-namespace ping {
-namespace server {
+namespace ndn::ping::server {
 
 /**
- * @brief logs ping responses
+ * @brief Logs ping responses
  */
 class Tracer : noncopyable
 {
 public:
   Tracer(PingServer& pingServer, const Options& options);
 
-  /**
-   * @brief Prints ping information when interest received
-   * @param name interest name received
-   */
-  void
-  onReceive(const Name& name);
-
 private:
   const Options& m_options;
 };
 
-} // namespace server
-} // namespace ping
-} // namespace ndn
+} // namespace ndn::ping::server
 
 #endif // NDN_TOOLS_PING_SERVER_TRACER_HPP

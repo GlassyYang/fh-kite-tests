@@ -59,7 +59,7 @@ public:
    *
    * @param name incoming interest name
    */
-  signal::Signal<Rv, Name> afterReceive;
+  ndn::util::signal::Signal<Rv, Name> afterReceive;
 
   /**
    * @brief Sets the Interest filter

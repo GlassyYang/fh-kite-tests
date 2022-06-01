@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_UTIL_SHA256_HPP
-#define NDN_UTIL_SHA256_HPP
+#ifndef NDN_CXX_UTIL_SHA256_HPP
+#define NDN_CXX_UTIL_SHA256_HPP
 
 #include "ndn-cxx/encoding/block.hpp"
 #include "ndn-cxx/encoding/buffer-stream.hpp"
@@ -126,13 +126,6 @@ public:
   operator<<(const std::string& str);
 
   /**
-   * @brief Add a block to the digest calculation.
-   * @throw Error the digest has already been finalized
-   */
-  Sha256&
-  operator<<(const Block& block);
-
-  /**
    * @brief Add a uint64_t value to the digest calculation.
    * @throw Error the digest has already been finalized
    */
@@ -140,13 +133,18 @@ public:
   operator<<(uint64_t value);
 
   /**
-   * @brief Add a raw buffer to the digest calculation.
-   * @param buffer the input buffer
-   * @param size the size of the input buffer
+   * @brief Add a contiguous range of arbitrary bytes to the digest calculation.
+   * @throw Error the digest has already been finalized
+   */
+  Sha256&
+  operator<<(span<const uint8_t> bytes);
+
+  /**
+   * @brief Add a byte buffer to the digest calculation.
    * @throw Error the digest has already been finalized
    */
   void
-  update(const uint8_t* buffer, size_t size);
+  update(span<const uint8_t> buffer);
 
   /**
    * @brief Convert digest to std::string.
@@ -157,12 +155,10 @@ public:
 
   /**
    * @brief Stateless SHA-256 digest calculation.
-   * @param buffer the input buffer
-   * @param size the size of the input buffer
    * @return SHA-256 digest of the input buffer
    */
   static ConstBufferPtr
-  computeDigest(const uint8_t* buffer, size_t size);
+  computeDigest(span<const uint8_t> buffer);
 
 private:
   unique_ptr<security::transform::StepSource> m_input;
@@ -177,4 +173,4 @@ operator<<(std::ostream& os, Sha256& digest);
 } // namespace util
 } // namespace ndn
 
-#endif // NDN_UTIL_SHA256_HPP
+#endif // NDN_CXX_UTIL_SHA256_HPP

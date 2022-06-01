@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -236,32 +236,25 @@ BOOST_AUTO_TEST_CASE(AppendComponent)
   name.append(Component("Emid"));
   BOOST_CHECK_EQUAL(name.wireEncode(), "0706 0804456D6964"_block);
 
-  name.append(25042, reinterpret_cast<const uint8_t*>("P3"), 2);
+  name.append(25042, {'P', '3'});
   BOOST_CHECK_EQUAL(name.wireEncode(), "070C 0804456D6964 FD61D2025033"_block);
 
-  name.append(reinterpret_cast<const uint8_t*>("."), 1);
+  const uint8_t arr[] = {'.'};
+  name.append(arr);
   BOOST_CHECK_EQUAL(name.wireEncode(), "070F 0804456D6964 FD61D2025033 08012E"_block);
 
-  std::vector<uint8_t> v1{0x28, 0xF0, 0xA3, 0x6B};
-  name.append(16, v1.begin(), v1.end());
+  const std::vector<uint8_t> vec{0x28, 0xF0, 0xA3, 0x6B};
+  name.append(16, vec.begin(), vec.end());
   BOOST_CHECK_EQUAL(name.wireEncode(), "0715 0804456D6964 FD61D2025033 08012E 100428F0A36B"_block);
 
-  BOOST_CHECK(!name.empty());
   name.clear();
-  BOOST_CHECK(name.empty());
   BOOST_CHECK_EQUAL(name.wireEncode(), "0700"_block);
 
-  name.append(v1.begin(), v1.end());
+  name.append(vec.begin(), vec.end());
   BOOST_CHECK_EQUAL(name.wireEncode(), "0706 080428F0A36B"_block);
 
   name.append("xKh");
   BOOST_CHECK_EQUAL(name.wireEncode(), "070B 080428F0A36B 0803784B68"_block);
-
-  name.append("0100"_block);
-  BOOST_CHECK_EQUAL(name.wireEncode(), "070F 080428F0A36B 0803784B68 08020100"_block);
-
-  name.append("080109"_block);
-  BOOST_CHECK_EQUAL(name.wireEncode(), "0712 080428F0A36B 0803784B68 08020100 080109"_block);
 }
 
 BOOST_AUTO_TEST_CASE(AppendPartialName)
@@ -294,12 +287,12 @@ BOOST_AUTO_TEST_CASE(AppendParametersSha256Digest)
   auto digest = make_shared<Buffer>(32);
 
   Name name("/P");
-  name.appendParametersSha256Digest(digest);
+  name.appendParametersSha256Digest(digest); // ConstBufferPtr overload
   BOOST_CHECK_EQUAL(name.wireEncode(),
                     "0725 080150 02200000000000000000000000000000000000000000000000000000000000000000"_block);
 
   name = "/P";
-  name.appendParametersSha256Digest(digest->data(), digest->size());
+  name.appendParametersSha256Digest(*digest); // span overload
   BOOST_CHECK_EQUAL(name.wireEncode(),
                     "0725 080150 02200000000000000000000000000000000000000000000000000000000000000000"_block);
 
@@ -309,29 +302,42 @@ BOOST_AUTO_TEST_CASE(AppendParametersSha256Digest)
                     "0725 080150 0220E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"_block);
 }
 
-BOOST_AUTO_TEST_CASE(Markers)
+BOOST_AUTO_TEST_CASE(AppendTypedComponent)
 {
   // TestNameComponent/NamingConvention provides additional coverage for these methods,
-  // including verifications of the wire format.
+  // including verification of the wire format.
 
   Name name;
   uint64_t number;
 
-  BOOST_REQUIRE_NO_THROW(number = name.appendSegment(30923).at(-1).toSegment());
-  BOOST_CHECK_EQUAL(number, 30923);
+  BOOST_CHECK_NO_THROW(number = name.appendSegment(30923).at(-1).toSegment());
+  BOOST_TEST(number == 30923);
 
-  BOOST_REQUIRE_NO_THROW(number = name.appendVersion().at(-1).toVersion());
+  BOOST_CHECK_NO_THROW(number = name.appendByteOffset(41880).at(-1).toByteOffset());
+  BOOST_TEST(number == 41880);
 
-  BOOST_REQUIRE_NO_THROW(number = name.appendVersion(25912).at(-1).toVersion());
-  BOOST_CHECK_EQUAL(number, 25912);
+  auto before = time::toUnixTimestamp(time::system_clock::now());
+  BOOST_CHECK_NO_THROW(number = name.appendVersion().at(-1).toVersion());
+  auto after = time::toUnixTimestamp(time::system_clock::now());
+  BOOST_TEST(number >= before.count());
+  BOOST_TEST(number <= after.count());
+
+  BOOST_CHECK_NO_THROW(number = name.appendVersion(25912).at(-1).toVersion());
+  BOOST_TEST(number == 25912);
 
   const auto tp = time::system_clock::now();
   time::system_clock::TimePoint tp2;
-  BOOST_REQUIRE_NO_THROW(tp2 = name.appendTimestamp(tp).at(-1).toTimestamp());
-  BOOST_CHECK_LE(time::abs(tp2 - tp), 1_us);
+  BOOST_CHECK_NO_THROW(tp2 = name.appendTimestamp(tp).at(-1).toTimestamp());
+  BOOST_TEST(time::abs(tp2 - tp) <= 1_us);
 
-  BOOST_REQUIRE_NO_THROW(number = name.appendSequenceNumber(11676).at(-1).toSequenceNumber());
-  BOOST_CHECK_EQUAL(number, 11676);
+  BOOST_CHECK_NO_THROW(number = name.appendSequenceNumber(11676).at(-1).toSequenceNumber());
+  BOOST_TEST(number == 11676);
+
+  name.appendKeyword({0xab, 0xcd, 0xef});
+  BOOST_TEST(name.at(-1) == Component::fromEscapedString("32=%AB%CD%EF"));
+
+  name.appendKeyword("test-keyword");
+  BOOST_TEST(name.at(-1) == Component::fromEscapedString("32=test-keyword"));
 }
 
 BOOST_AUTO_TEST_CASE(EraseComponent)
@@ -340,15 +346,20 @@ BOOST_AUTO_TEST_CASE(EraseComponent)
   BOOST_CHECK_EQUAL(name.wireEncode(), "0709 080141 080142 080143"_block);
   BOOST_CHECK_EQUAL(name.hasWire(), true);
 
-  name.erase(1);
+  name.erase(-2);
   BOOST_CHECK_EQUAL(name.size(), 2);
   BOOST_CHECK_EQUAL(name.hasWire(), false);
   BOOST_CHECK_EQUAL(name.wireEncode(), "0706 080141 080143"_block);
 
-  name.erase(-1);
+  name.erase(1);
   BOOST_CHECK_EQUAL(name.size(), 1);
   BOOST_CHECK_EQUAL(name.hasWire(), false);
   BOOST_CHECK_EQUAL(name.wireEncode(), "0703 080141"_block);
+
+  name.erase(0);
+  BOOST_CHECK_EQUAL(name.size(), 0);
+  BOOST_CHECK_EQUAL(name.hasWire(), false);
+  BOOST_CHECK_EQUAL(name.wireEncode(), "0700"_block);
 }
 
 BOOST_AUTO_TEST_CASE(Clear)

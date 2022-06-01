@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2015-2019, Arizona Board of Regents.
+ * Copyright (c) 2015-2022, Arizona Board of Regents.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -26,9 +26,12 @@
 #include "ping-server.hpp"
 #include "tracer.hpp"
 
-namespace ndn {
-namespace ping {
-namespace server {
+#include <boost/asio/signal_set.hpp>
+#include <boost/program_options/options_description.hpp>
+#include <boost/program_options/parsers.hpp>
+#include <boost/program_options/variables_map.hpp>
+
+namespace ndn::ping::server {
 
 namespace po = boost::program_options;
 
@@ -85,7 +88,7 @@ private:
 };
 
 static void
-usage(std::ostream& os, const std::string& programName, const po::options_description& options)
+usage(std::ostream& os, std::string_view programName, const po::options_description& options)
 {
   os << "Usage: " << programName << " [options] <prefix>\n"
      << "\n"
@@ -122,13 +125,8 @@ main(int argc, char* argv[])
   hiddenDesc.add_options()
     ("prefix", po::value<std::string>(&prefix));
 
-  po::options_description deprecatedDesc;
-  deprecatedDesc.add_options()
-    ("_deprecated_freshness_,x", po::value<time::milliseconds::rep>())
-    ;
-
   po::options_description optDesc;
-  optDesc.add(visibleDesc).add(hiddenDesc).add(deprecatedDesc);
+  optDesc.add(visibleDesc).add(hiddenDesc);
 
   po::positional_options_description posDesc;
   posDesc.add("prefix", -1);
@@ -149,11 +147,6 @@ main(int argc, char* argv[])
     return 2;
   }
 
-  if (vm.count("_deprecated_freshness_") > 0) {
-    std::cerr << "WARNING: short option '-x' is deprecated and will be removed in the near "
-                 "future. Please use '-f' or the long form '--freshness'." << std::endl;
-  }
-
   if (vm.count("help") > 0) {
     usage(std::cout, argv[0], visibleDesc);
     return 0;
@@ -172,9 +165,6 @@ main(int argc, char* argv[])
   options.prefix = prefix;
 
   options.freshnessPeriod = time::milliseconds(vm["freshness"].as<time::milliseconds::rep>());
-  if (vm.count("_deprecated_freshness_") > 0) {
-    options.freshnessPeriod = time::milliseconds(vm["_deprecated_freshness_"].as<time::milliseconds::rep>());
-  }
   if (options.freshnessPeriod < 0_ms) {
     std::cerr << "ERROR: FreshnessPeriod cannot be negative" << std::endl;
     return 2;
@@ -195,9 +185,7 @@ main(int argc, char* argv[])
   return Runner(options).run();
 }
 
-} // namespace server
-} // namespace ping
-} // namespace ndn
+} // namespace ndn::ping::server
 
 int
 main(int argc, char* argv[])

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -17,16 +17,13 @@
  * <http://www.gnu.org/licenses/>.
  *
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
- *
- * @author Jeff Thompson <jefft0@remap.ucla.edu>
- * @author Alexander Afanasyev <http://lasr.cs.ucla.edu/afanasyev/index.html>
- * @author Zhenkai Zhu <http://irl.cs.ucla.edu/~zhenkai/>
  */
 
 #ifndef NDN_CXX_NAME_HPP
 #define NDN_CXX_NAME_HPP
 
 #include "ndn-cxx/name-component.hpp"
+#include "ndn-cxx/util/optional.hpp"
 
 #include <iterator>
 
@@ -167,7 +164,7 @@ public: // access
     if (i < 0) {
       i += static_cast<ssize_t>(size());
     }
-    return reinterpret_cast<const Component&>(m_wire.elements()[i]);
+    return static_cast<const Component&>(m_wire.elements()[static_cast<size_t>(i)]);
   }
 
   /** @brief Equivalent to `get(i)`.
@@ -291,23 +288,48 @@ public: // modifiers
     return *this;
   }
 
-  /** @brief Append a NameComponent of TLV-TYPE @p type, copying @p count bytes at @p value as
-   *         TLV-VALUE.
-   *  @return a reference to this name, to allow chaining.
+  /**
+   * @brief Append a NameComponent of TLV-TYPE @p type, copying the TLV-VALUE from @p value.
+   * @return a reference to this name, to allow chaining.
    */
+  Name&
+  append(uint32_t type, span<const uint8_t> value)
+  {
+    return append(Component(type, value));
+  }
+
+  /**
+   * @brief Append a GenericNameComponent, copying the TLV-VALUE from @p value.
+   * @return a reference to this name, to allow chaining.
+   */
+  Name&
+  append(span<const uint8_t> value)
+  {
+    return append(Component(tlv::GenericNameComponent, value));
+  }
+
+  /**
+   * @brief Append a NameComponent of TLV-TYPE @p type, copying @p count bytes at @p value as TLV-VALUE.
+   * @return a reference to this name, to allow chaining.
+   * @deprecated Use append(uint32_t, span<const uint8_t>)
+   */
+  [[deprecated("use the overload that takes a span<>")]]
   Name&
   append(uint32_t type, const uint8_t* value, size_t count)
   {
-    return append(Component(type, value, count));
+    return append(type, make_span(value, count));
   }
 
-  /** @brief Append a GenericNameComponent, copying @p count bytes at @p value as TLV-VALUE.
-   *  @return a reference to this name, to allow chaining.
+  /**
+   * @brief Append a GenericNameComponent, copying @p count bytes at @p value as TLV-VALUE.
+   * @return a reference to this name, to allow chaining.
+   * @deprecated Use append(span<const uint8_t>)
    */
+  [[deprecated("use the overload that takes a span<>")]]
   Name&
   append(const uint8_t* value, size_t count)
   {
-    return append(Component(value, count));
+    return append(make_span(value, count));
   }
 
   /** @brief Append a NameComponent of TLV-TYPE @p type, copying TLV-VALUE from a range.
@@ -336,7 +358,7 @@ public: // modifiers
   Name&
   append(Iterator first, Iterator last)
   {
-    return append(Component(first, last));
+    return append(Component(tlv::GenericNameComponent, first, last));
   }
 
   /** @brief Append a GenericNameComponent, copying TLV-VALUE from a null-terminated string.
@@ -350,23 +372,6 @@ public: // modifiers
     return append(Component(str));
   }
 
-  /** @brief Append a GenericNameComponent from a TLV element.
-   *  @param value a TLV element. If its TLV-TYPE is tlv::GenericNameComponent, it is
-   *               appended as is. Otherwise, it is nested into a GenericNameComponent.
-   *  @return a reference to this name, to allow chaining.
-   */
-  Name&
-  append(Block value)
-  {
-    if (value.type() == tlv::GenericNameComponent) {
-      m_wire.push_back(std::move(value));
-    }
-    else {
-      m_wire.push_back(Block(tlv::GenericNameComponent, std::move(value)));
-    }
-    return *this;
-  }
-
   /** @brief Append a PartialName.
    *  @param name the components to append
    *  @return a reference to this name, to allow chaining
@@ -374,7 +379,7 @@ public: // modifiers
   Name&
   append(const PartialName& name);
 
-  /** @brief Append a component with a nonNegativeInteger
+  /** @brief Append a component with a NonNegativeInteger
    *  @return a reference to this name, to allow chaining
    *  @sa https://named-data.net/doc/NDN-packet-spec/0.3/tlv.html#non-negative-integer-encoding
    */
@@ -388,10 +393,11 @@ public: // modifiers
    *  @param marker 1-octet marker
    *  @param number the number
    *
-   *  The component is encoded as a 1-octet marker, followed by a nonNegativeInteger.
+   *  The component is encoded as a 1-octet marker, followed by a NonNegativeInteger.
    *
    *  @return a reference to this name, to allow chaining
-   *  @sa NDN Naming Conventions https://named-data.net/doc/tech-memos/naming-conventions.pdf
+   *  @sa NDN Naming Conventions revision 1 (obsolete)
+   *      https://named-data.net/wp-content/uploads/2014/08/ndn-tr-22-ndn-memo-naming-conventions.pdf
    */
   Name&
   appendNumberWithMarker(uint8_t marker, uint64_t number)
@@ -399,18 +405,11 @@ public: // modifiers
     return append(Component::fromNumberWithMarker(marker, number));
   }
 
-  /** @brief Append a version component
-   *  @param version the version number to append; if nullopt, the current UNIX time
-   *                 in milliseconds is used
-   *  @return a reference to this name, to allow chaining
-   *  @sa NDN Naming Conventions https://named-data.net/doc/tech-memos/naming-conventions.pdf
-   */
-  Name&
-  appendVersion(optional<uint64_t> version = nullopt);
-
-  /** @brief Append a segment number (sequential) component
-   *  @return a reference to this name, to allow chaining
-   *  @sa NDN Naming Conventions https://named-data.net/doc/tech-memos/naming-conventions.pdf
+  /**
+   * @brief Append a segment number (sequential) component
+   * @return a reference to this name, to allow chaining
+   * @sa NDN Naming Conventions
+   *     https://named-data.net/publications/techreports/ndn-tr-22-3-ndn-memo-naming-conventions/
    */
   Name&
   appendSegment(uint64_t segmentNo)
@@ -418,9 +417,11 @@ public: // modifiers
     return append(Component::fromSegment(segmentNo));
   }
 
-  /** @brief Append a byte offset component
-   *  @return a reference to this name, to allow chaining
-   *  @sa NDN Naming Conventions https://named-data.net/doc/tech-memos/naming-conventions.pdf
+  /**
+   * @brief Append a byte offset component
+   * @return a reference to this name, to allow chaining
+   * @sa NDN Naming Conventions
+   *     https://named-data.net/publications/techreports/ndn-tr-22-3-ndn-memo-naming-conventions/
    */
   Name&
   appendByteOffset(uint64_t offset)
@@ -428,17 +429,32 @@ public: // modifiers
     return append(Component::fromByteOffset(offset));
   }
 
-  /** @brief Append a timestamp component
-   *  @param timestamp the timestamp to append; if nullopt, the current system time is used
-   *  @return a reference to this name, to allow chaining
-   *  @sa NDN Naming Conventions https://named-data.net/doc/tech-memos/naming-conventions.pdf
+  /**
+   * @brief Append a version component
+   * @param version the version number to append; if nullopt, the current UNIX time
+   *                in milliseconds is used
+   * @return a reference to this name, to allow chaining
+   * @sa NDN Naming Conventions
+   *     https://named-data.net/publications/techreports/ndn-tr-22-3-ndn-memo-naming-conventions/
    */
   Name&
-  appendTimestamp(optional<time::system_clock::TimePoint> timestamp = nullopt);
+  appendVersion(const optional<uint64_t>& version = nullopt);
 
-  /** @brief Append a sequence number component
-   *  @return a reference to this name, to allow chaining
-   *  @sa NDN Naming Conventions https://named-data.net/doc/tech-memos/naming-conventions.pdf
+  /**
+   * @brief Append a timestamp component
+   * @param timestamp the timestamp to append; if nullopt, the current system time is used
+   * @return a reference to this name, to allow chaining
+   * @sa NDN Naming Conventions
+   *     https://named-data.net/publications/techreports/ndn-tr-22-3-ndn-memo-naming-conventions/
+   */
+  Name&
+  appendTimestamp(const optional<time::system_clock::time_point>& timestamp = nullopt);
+
+  /**
+   * @brief Append a sequence number component
+   * @return a reference to this name, to allow chaining
+   * @sa NDN Naming Conventions
+   *     https://named-data.net/publications/techreports/ndn-tr-22-3-ndn-memo-naming-conventions/
    */
   Name&
   appendSequenceNumber(uint64_t seqNo)
@@ -446,50 +462,77 @@ public: // modifiers
     return append(Component::fromSequenceNumber(seqNo));
   }
 
-  /** @brief Append an ImplicitSha256Digest component.
-   *  @return a reference to this name, to allow chaining
+  /**
+   * @brief Append an ImplicitSha256Digest component.
+   * @return a reference to this name, to allow chaining
    */
   Name&
   appendImplicitSha256Digest(ConstBufferPtr digest)
   {
-    return append(Component::fromImplicitSha256Digest(std::move(digest)));
+    return append(Component(tlv::ImplicitSha256DigestComponent, std::move(digest)));
   }
 
-  /** @brief Append an ImplicitSha256Digest component.
-   *  @return a reference to this name, to allow chaining
+  /**
+   * @brief Append an ImplicitSha256Digest component.
+   * @return a reference to this name, to allow chaining
    */
   Name&
-  appendImplicitSha256Digest(const uint8_t* digest, size_t digestSize)
+  appendImplicitSha256Digest(span<const uint8_t> digestBytes)
   {
-    return append(Component::fromImplicitSha256Digest(digest, digestSize));
+    return append(Component(tlv::ImplicitSha256DigestComponent, digestBytes));
   }
 
-  /** @brief Append a ParametersSha256Digest component.
-   *  @return a reference to this name, to allow chaining
+  /**
+   * @brief Append a ParametersSha256Digest component.
+   * @return a reference to this name, to allow chaining
    */
   Name&
   appendParametersSha256Digest(ConstBufferPtr digest)
   {
-    return append(Component::fromParametersSha256Digest(std::move(digest)));
+    return append(Component(tlv::ParametersSha256DigestComponent, std::move(digest)));
   }
 
-  /** @brief Append a ParametersSha256Digest component.
-   *  @return a reference to this name, to allow chaining
+  /**
+   * @brief Append a ParametersSha256Digest component.
+   * @return a reference to this name, to allow chaining
    */
   Name&
-  appendParametersSha256Digest(const uint8_t* digest, size_t digestSize)
+  appendParametersSha256Digest(span<const uint8_t> digestBytes)
   {
-    return append(Component::fromParametersSha256Digest(digest, digestSize));
+    return append(Component(tlv::ParametersSha256DigestComponent, digestBytes));
   }
 
-  /** @brief Append a placeholder for a ParametersSha256Digest component.
-   *  @return a reference to this name, to allow chaining
+  /**
+   * @brief Append a placeholder for a ParametersSha256Digest component.
+   * @return a reference to this name, to allow chaining
    */
   Name&
   appendParametersSha256DigestPlaceholder();
 
-  /** @brief Append a component
-   *  @note This makes push_back an alias of append, giving Name a similar API as STL vector.
+  /**
+   * @brief Append a keyword component.
+   * @return a reference to this name, to allow chaining
+   */
+  Name&
+  appendKeyword(span<const uint8_t> keyword)
+  {
+    return append(Component(tlv::KeywordNameComponent, keyword));
+  }
+
+  /**
+   * @brief Append a keyword component.
+   * @return a reference to this name, to allow chaining
+   */
+  Name&
+  appendKeyword(const char* keyword)
+  {
+    return append(Component(tlv::KeywordNameComponent, {reinterpret_cast<const uint8_t*>(keyword),
+                                                        std::char_traits<char>::length(keyword)}));
+  }
+
+  /**
+   * @brief Append a component.
+   * @note This makes push_back an alias of append, giving Name a similar API as `std::vector`.
    */
   template<class T>
   void
@@ -498,16 +541,18 @@ public: // modifiers
     append(component);
   }
 
-  /** @brief Erase the component at the specified index.
-   *  @param i zero-based index of the component to replace;
-   *           if negative, it is interpreted as offset from the end of the name
-   *  @warning No bounds checking is performed, using an out-of-range index is undefined behavior.
+  /**
+   * @brief Erase the component at the specified index.
+   * @param i zero-based index of the component to erase;
+   *          if negative, it is interpreted as offset from the end of the name
+   * @warning No bounds checking is performed, using an out-of-range index is undefined behavior.
    */
   void
   erase(ssize_t i);
 
-  /** @brief Remove all components.
-   *  @post `empty() == true`
+  /**
+   * @brief Remove all components.
+   * @post `empty() == true`
    */
   void
   clear();

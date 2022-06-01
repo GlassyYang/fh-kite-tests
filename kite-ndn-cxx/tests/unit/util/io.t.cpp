@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,7 +22,7 @@
 #include "ndn-cxx/util/io.hpp"
 
 #include "tests/boost-test.hpp"
-#include "tests/identity-management-fixture.hpp"
+#include "tests/key-chain-fixture.hpp"
 
 #include <boost/filesystem.hpp>
 #include <boost/mpl/vector.hpp>
@@ -67,7 +67,7 @@ BOOST_AUTO_TEST_CASE_TEMPLATE(SaveBuffer, T, Encodings)
 {
   T t;
   std::ostringstream os(std::ios_base::binary);
-  io::saveBuffer(t.blob.data(), t.blob.size(), os, t.encoding);
+  io::saveBuffer(t.blob, os, t.encoding);
   BOOST_CHECK_EQUAL(os.str(), t.stream.str());
 }
 
@@ -86,21 +86,22 @@ BOOST_AUTO_TEST_CASE(SaveBufferException)
   NullStreambuf nullbuf;
   std::ostream out(&nullbuf);
   const Buffer buffer(1);
-  BOOST_CHECK_THROW(io::saveBuffer(buffer.data(), buffer.size(), out, io::NO_ENCODING), io::Error);
+  BOOST_CHECK_THROW(io::saveBuffer(buffer, out, io::NO_ENCODING), io::Error);
 }
 
 BOOST_AUTO_TEST_CASE(UnknownIoEncoding)
 {
   std::stringstream ss;
+  BOOST_CHECK_THROW(io::loadTlv<Name>(ss, static_cast<io::IoEncoding>(5)), std::invalid_argument);
   BOOST_CHECK_THROW(io::loadBuffer(ss, static_cast<io::IoEncoding>(5)), std::invalid_argument);
-  BOOST_CHECK_THROW(io::saveBuffer(nullptr, 0, ss, static_cast<io::IoEncoding>(5)), std::invalid_argument);
+  BOOST_CHECK_THROW(io::saveBuffer({}, ss, static_cast<io::IoEncoding>(5)), std::invalid_argument);
 }
 
 class FileIoFixture
 {
 protected:
   FileIoFixture()
-    : filepath(boost::filesystem::path(UNIT_TEST_CONFIG_PATH) / "TestIo")
+    : filepath(boost::filesystem::path(UNIT_TESTS_TMPDIR) / "TestIo")
     , filename(filepath.string())
   {
     boost::filesystem::create_directories(filepath.parent_path());
@@ -112,7 +113,8 @@ protected:
     boost::filesystem::remove(filepath, ec); // ignore error
   }
 
-  /** \brief create a directory at filename, so that it's neither readable nor writable as a file
+  /**
+   * \brief create a directory at `filepath`, so that it's neither readable nor writable as a file
    */
   void
   mkdir() const
@@ -171,40 +173,50 @@ public:
   bool shouldThrow = false;
 };
 
-template<bool SHOULD_THROW>
-class DecodableTypeTpl
+class DecodableType
 {
 public:
-  DecodableTypeTpl() = default;
+  DecodableType() = default;
 
   explicit
-  DecodableTypeTpl(const Block& block)
+  DecodableType(const Block& block)
   {
-    this->wireDecode(block);
+    wireDecode(block);
   }
 
   void
   wireDecode(const Block& block)
   {
-    if (SHOULD_THROW) {
-      NDN_THROW(tlv::Error("decode error"));
-    }
-
-    // block must be 0xBB, 0x01, 0xEE
-    BOOST_CHECK_EQUAL(block.type(), 0xBB);
-    BOOST_REQUIRE_EQUAL(block.value_size(), 1);
-    BOOST_CHECK_EQUAL(block.value()[0], 0xEE);
+    BOOST_TEST(block == "BB01EE"_block);
   }
 };
 
-using DecodableType = DecodableTypeTpl<false>;
-using DecodableTypeThrow = DecodableTypeTpl<true>;
+class DecodableTypeThrow
+{
+public:
+  DecodableTypeThrow() = default;
+
+  explicit
+  DecodableTypeThrow(const Block& block)
+  {
+    wireDecode(block);
+  }
+
+  void
+  wireDecode(const Block&)
+  {
+    NDN_THROW(tlv::Error("decode error"));
+  }
+};
 
 BOOST_AUTO_TEST_CASE(LoadNoEncoding)
 {
   this->writeFile<std::vector<uint8_t>>({0xBB, 0x01, 0xEE});
   shared_ptr<DecodableType> decoded = io::load<DecodableType>(filename, io::NO_ENCODING);
   BOOST_CHECK(decoded != nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_NO_THROW(io::loadTlv<DecodableType>(ifs, io::NO_ENCODING));
 }
 
 BOOST_AUTO_TEST_CASE(LoadBase64)
@@ -212,6 +224,9 @@ BOOST_AUTO_TEST_CASE(LoadBase64)
   this->writeFile<std::string>("uwHu\n"); // printf '\xBB\x01\xEE' | base64
   shared_ptr<DecodableType> decoded = io::load<DecodableType>(filename, io::BASE64);
   BOOST_CHECK(decoded != nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_NO_THROW(io::loadTlv<DecodableType>(ifs, io::BASE64));
 }
 
 BOOST_AUTO_TEST_CASE(LoadBase64Newline64)
@@ -225,6 +240,9 @@ BOOST_AUTO_TEST_CASE(LoadBase64Newline64)
   //         \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00' | base64
   shared_ptr<name::Component> decoded = io::load<name::Component>(filename, io::BASE64);
   BOOST_CHECK(decoded != nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_NO_THROW(io::loadTlv<name::Component>(ifs, io::BASE64));
 }
 
 BOOST_AUTO_TEST_CASE(LoadBase64Newline32)
@@ -235,6 +253,9 @@ BOOST_AUTO_TEST_CASE(LoadBase64Newline32)
     "AAAAAAAAAAAA\n");
   shared_ptr<name::Component> decoded = io::load<name::Component>(filename, io::BASE64);
   BOOST_CHECK(decoded != nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_NO_THROW(io::loadTlv<name::Component>(ifs, io::BASE64));
 }
 
 BOOST_AUTO_TEST_CASE(LoadBase64NewlineEnd)
@@ -243,6 +264,9 @@ BOOST_AUTO_TEST_CASE(LoadBase64NewlineEnd)
     "CEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n");
   shared_ptr<name::Component> decoded = io::load<name::Component>(filename, io::BASE64);
   BOOST_CHECK(decoded != nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_NO_THROW(io::loadTlv<name::Component>(ifs, io::BASE64));
 }
 
 BOOST_AUTO_TEST_CASE(LoadBase64NoNewline)
@@ -251,6 +275,9 @@ BOOST_AUTO_TEST_CASE(LoadBase64NoNewline)
     "CEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
   shared_ptr<name::Component> decoded = io::load<name::Component>(filename, io::BASE64);
   BOOST_CHECK(decoded != nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_NO_THROW(io::loadTlv<name::Component>(ifs, io::BASE64));
 }
 
 BOOST_AUTO_TEST_CASE(LoadHex)
@@ -258,14 +285,20 @@ BOOST_AUTO_TEST_CASE(LoadHex)
   this->writeFile<std::string>("BB01EE");
   shared_ptr<DecodableType> decoded = io::load<DecodableType>(filename, io::HEX);
   BOOST_CHECK(decoded != nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_NO_THROW(io::loadTlv<DecodableType>(ifs, io::HEX));
 }
 
-BOOST_AUTO_TEST_CASE(LoadException)
+BOOST_AUTO_TEST_CASE(LoadDecodeException)
 {
   this->writeFile<std::vector<uint8_t>>({0xBB, 0x01, 0xEE});
   shared_ptr<DecodableTypeThrow> decoded;
   BOOST_CHECK_NO_THROW(decoded = io::load<DecodableTypeThrow>(filename, io::NO_ENCODING));
   BOOST_CHECK(decoded == nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_THROW(io::loadTlv<DecodableTypeThrow>(ifs, io::NO_ENCODING), io::Error);
 }
 
 BOOST_AUTO_TEST_CASE(LoadNotHex)
@@ -274,6 +307,20 @@ BOOST_AUTO_TEST_CASE(LoadNotHex)
   shared_ptr<DecodableType> decoded;
   BOOST_CHECK_NO_THROW(decoded = io::load<DecodableType>(filename, io::HEX));
   BOOST_CHECK(decoded == nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_THROW(io::loadTlv<DecodableType>(ifs, io::HEX), io::Error);
+}
+
+BOOST_AUTO_TEST_CASE(LoadEmpty)
+{
+  this->writeFile<std::vector<uint8_t>>({});
+  shared_ptr<DecodableType> decoded;
+  BOOST_CHECK_NO_THROW(decoded = io::load<DecodableType>(filename, io::NO_ENCODING));
+  BOOST_CHECK(decoded == nullptr);
+
+  std::ifstream ifs(filename);
+  BOOST_CHECK_THROW(io::loadTlv<DecodableType>(ifs, io::NO_ENCODING), io::Error);
 }
 
 BOOST_AUTO_TEST_CASE(LoadFileNotReadable)
@@ -327,23 +374,23 @@ BOOST_AUTO_TEST_CASE(SaveFileNotWritable)
 BOOST_AUTO_TEST_SUITE_END() // FileIo
 
 class IdCertFixture : public FileIoFixture
-                    , public IdentityManagementFixture
+                    , public KeyChainFixture
 {
 };
 
 BOOST_FIXTURE_TEST_CASE(IdCert, IdCertFixture)
 {
-  auto identity = addIdentity("/TestIo/IdCert", RsaKeyParams());
+  auto identity = m_keyChain.createIdentity("/TestIo/IdCert", RsaKeyParams());
   const auto& cert = identity.getDefaultKey().getDefaultCertificate();
   io::save(cert, filename);
 
-  auto readCert = io::load<security::v2::Certificate>(filename);
+  auto readCert = io::load<security::Certificate>(filename);
 
   BOOST_REQUIRE(readCert != nullptr);
   BOOST_CHECK_EQUAL(cert.getName(), readCert->getName());
 
   this->writeFile<std::string>("");
-  readCert = io::load<security::v2::Certificate>(filename);
+  readCert = io::load<security::Certificate>(filename);
   BOOST_REQUIRE(readCert == nullptr);
 }
 

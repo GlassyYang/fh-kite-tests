@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2016-2019, Regents of the University of California,
+ * Copyright (c) 2016-2022, Regents of the University of California,
  *                          Colorado State University,
  *                          University Pierre & Marie Curie, Sorbonne University.
  *
@@ -28,11 +28,7 @@
 
 #include <cmath>
 
-namespace ndn {
-namespace chunks {
-
-const int DataFetcher::MAX_RETRIES_INFINITE = -1;
-const time::milliseconds DataFetcher::MAX_CONGESTION_BACKOFF_TIME = time::seconds(10);
+namespace ndn::chunks {
 
 shared_ptr<DataFetcher>
 DataFetcher::fetch(Face& face, const Interest& interest, int maxNackRetries, int maxTimeoutRetries,
@@ -60,12 +56,7 @@ DataFetcher::DataFetcher(Face& face, int maxNackRetries, int maxTimeoutRetries,
   , m_onTimeout(std::move(onTimeout))
   , m_maxNackRetries(maxNackRetries)
   , m_maxTimeoutRetries(maxTimeoutRetries)
-  , m_nNacks(0)
-  , m_nTimeouts(0)
-  , m_nCongestionRetries(0)
   , m_isVerbose(isVerbose)
-  , m_isStopped(false)
-  , m_hasError(false)
 {
   BOOST_ASSERT(m_onData != nullptr);
 }
@@ -85,9 +76,9 @@ DataFetcher::expressInterest(const Interest& interest, const shared_ptr<DataFetc
 {
   m_nCongestionRetries = 0;
   m_pendingInterest = m_face.expressInterest(interest,
-                                             bind(&DataFetcher::handleData, this, _1, _2, self),
-                                             bind(&DataFetcher::handleNack, this, _1, _2, self),
-                                             bind(&DataFetcher::handleTimeout, this, _1, self));
+    [=] (auto&&... args) { handleData(std::forward<decltype(args)>(args)..., self); },
+    [=] (auto&&... args) { handleNack(std::forward<decltype(args)>(args)..., self); },
+    [=] (auto&&... args) { handleTimeout(std::forward<decltype(args)>(args)..., self); });
 }
 
 void
@@ -113,7 +104,7 @@ DataFetcher::handleNack(const Interest& interest, const lp::Nack& nack,
 
   if (m_isVerbose)
     std::cerr << "Received Nack with reason " << nack.getReason()
-              << " for Interest " << interest << std::endl;
+              << " for Interest " << interest << "\n";
 
   if (m_nNacks <= m_maxNackRetries || m_maxNackRetries == MAX_RETRIES_INFINITE) {
     Interest newInterest(interest);
@@ -162,7 +153,7 @@ DataFetcher::handleTimeout(const Interest& interest, const shared_ptr<DataFetche
     ++m_nTimeouts;
 
   if (m_isVerbose)
-    std::cerr << "Timeout for Interest " << interest << std::endl;
+    std::cerr << "Timeout for Interest " << interest << "\n";
 
   if (m_nTimeouts <= m_maxTimeoutRetries || m_maxTimeoutRetries == MAX_RETRIES_INFINITE) {
     Interest newInterest(interest);
@@ -177,5 +168,4 @@ DataFetcher::handleTimeout(const Interest& interest, const shared_ptr<DataFetche
   }
 }
 
-} // namespace chunks
-} // namespace ndn
+} // namespace ndn::chunks

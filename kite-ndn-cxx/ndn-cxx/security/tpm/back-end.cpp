@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -59,7 +59,7 @@ BackEnd::createKey(const Name& identity, const KeyParams& params)
   switch (params.getKeyIdType()) {
     case KeyIdType::USER_SPECIFIED: {
       // check that the provided key id isn't already taken
-      Name keyName = v2::constructKeyName(identity, params.getKeyId());
+      Name keyName = constructKeyName(identity, params.getKeyId());
       if (hasKey(keyName)) {
         NDN_THROW(Error("Key `" + keyName.toUri() + "` already exists"));
       }
@@ -93,12 +93,12 @@ BackEnd::exportKey(const Name& keyName, const char* pw, size_t pwLen)
 }
 
 void
-BackEnd::importKey(const Name& keyName, const uint8_t* pkcs8, size_t pkcs8Len, const char* pw, size_t pwLen)
+BackEnd::importKey(const Name& keyName, span<const uint8_t> pkcs8, const char* pw, size_t pwLen)
 {
   if (hasKey(keyName)) {
     NDN_THROW(Error("Key `" + keyName.toUri() + "` already exists"));
   }
-  doImportKey(keyName, pkcs8, pkcs8Len, pw, pwLen);
+  doImportKey(keyName, pkcs8, pw, pwLen);
 }
 
 void
@@ -107,7 +107,7 @@ BackEnd::importKey(const Name& keyName, shared_ptr<transform::PrivateKey> key)
   if (hasKey(keyName)) {
     NDN_THROW(Error("Key `" + keyName.toUri() + "` already exists"));
   }
-  doImportKey(keyName, key);
+  doImportKey(keyName, std::move(key));
 }
 
 Name
@@ -116,7 +116,7 @@ BackEnd::constructAsymmetricKeyName(const KeyHandle& keyHandle, const Name& iden
 {
   switch (params.getKeyIdType()) {
     case KeyIdType::USER_SPECIFIED: {
-      return v2::constructKeyName(identity, params.getKeyId());
+      return constructKeyName(identity, params.getKeyId());
     }
     case KeyIdType::SHA256: {
       using namespace transform;
@@ -124,13 +124,13 @@ BackEnd::constructAsymmetricKeyName(const KeyHandle& keyHandle, const Name& iden
       bufferSource(*keyHandle.derivePublicKey()) >>
         digestFilter(DigestAlgorithm::SHA256) >>
         streamSink(os);
-      return v2::constructKeyName(identity, name::Component(os.buf()));
+      return constructKeyName(identity, name::Component(os.buf()));
     }
     case KeyIdType::RANDOM: {
       Name keyName;
       do {
         auto keyId = name::Component::fromNumber(random::generateSecureWord64());
-        keyName = v2::constructKeyName(identity, keyId);
+        keyName = constructKeyName(identity, keyId);
       } while (hasKey(keyName));
       return keyName;
     }

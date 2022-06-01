@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -20,11 +20,9 @@
  */
 
 #include "ndn-cxx/security/pib/impl/key-impl.hpp"
-#include "ndn-cxx/security/pib/impl/pib-memory.hpp"
-#include "ndn-cxx/security/pib/pib.hpp"
 
 #include "tests/boost-test.hpp"
-#include "tests/identity-management-fixture.hpp"
+#include "tests/key-chain-fixture.hpp"
 #include "tests/unit/security/pib/pib-data-fixture.hpp"
 
 namespace ndn {
@@ -35,34 +33,29 @@ namespace tests {
 
 BOOST_AUTO_TEST_SUITE(Security)
 BOOST_AUTO_TEST_SUITE(Pib)
-BOOST_FIXTURE_TEST_SUITE(TestKeyImpl, security::tests::PibDataFixture)
 
-using security::Pib;
+using pib::Pib;
 
-BOOST_AUTO_TEST_CASE(Basic)
+class KeyImplFixture : public pib::tests::PibDataFixture
 {
-  auto pibImpl = make_shared<pib::PibMemory>();
-  KeyImpl key11(id1Key1Name, id1Key1.data(), id1Key1.size(), pibImpl);
+protected:
+  const shared_ptr<PibImpl> pibImpl = makePibWithKey(id1Key1Name, id1Key1);
+  KeyImpl key11{id1Key1Name, id1Key1, pibImpl};
+};
 
-  BOOST_CHECK_EQUAL(key11.getName(), id1Key1Name);
+BOOST_FIXTURE_TEST_SUITE(TestKeyImpl, KeyImplFixture)
+
+BOOST_AUTO_TEST_CASE(Properties)
+{
   BOOST_CHECK_EQUAL(key11.getIdentity(), id1);
+  BOOST_CHECK_EQUAL(key11.getName(), id1Key1Name);
   BOOST_CHECK_EQUAL(key11.getKeyType(), KeyType::EC);
-  BOOST_CHECK(key11.getPublicKey() == id1Key1);
-
-  KeyImpl key11Bak(id1Key1Name, pibImpl);
-  BOOST_CHECK_EQUAL(key11Bak.getName(), id1Key1Name);
-  BOOST_CHECK_EQUAL(key11Bak.getIdentity(), id1);
-  BOOST_CHECK_EQUAL(key11Bak.getKeyType(), KeyType::EC);
-  BOOST_CHECK(key11Bak.getPublicKey() == id1Key1);
+  BOOST_TEST(key11.getPublicKey() == id1Key1, boost::test_tools::per_element());
 }
 
-BOOST_AUTO_TEST_CASE(CertificateOperation)
+BOOST_AUTO_TEST_CASE(CertificateOperations)
 {
-  auto pibImpl = make_shared<pib::PibMemory>();
-  KeyImpl key11(id1Key1Name, id1Key1.data(), id1Key1.size(), pibImpl);
-  BOOST_CHECK_NO_THROW(KeyImpl(id1Key1Name, pibImpl));
-
-  // key does not have any certificate
+  // key does not have any certificates
   BOOST_CHECK_EQUAL(key11.getCertificates().size(), 0);
 
   // get non-existing certificate, throw Pib::Error
@@ -70,16 +63,15 @@ BOOST_AUTO_TEST_CASE(CertificateOperation)
   // get default certificate, throw Pib::Error
   BOOST_CHECK_THROW(key11.getDefaultCertificate(), Pib::Error);
   // set non-existing certificate as default certificate, throw Pib::Error
-  BOOST_REQUIRE_THROW(key11.setDefaultCertificate(id1Key1Cert1.getName()), Pib::Error);
+  BOOST_CHECK_THROW(key11.setDefaultCertificate(id1Key1Cert1.getName()), Pib::Error);
 
   // add certificate
   key11.addCertificate(id1Key1Cert1);
-  BOOST_CHECK_NO_THROW(key11.getCertificate(id1Key1Cert1.getName()));
+  const auto& addedCert = key11.getCertificate(id1Key1Cert1.getName());
+  BOOST_CHECK_EQUAL(addedCert, id1Key1Cert1);
 
   // new certificate becomes default certificate when there was no default certificate
-  BOOST_REQUIRE_NO_THROW(key11.getDefaultCertificate());
   const auto& defaultCert0 = key11.getDefaultCertificate();
-  BOOST_CHECK_EQUAL(defaultCert0.getName(), id1Key1Cert1.getName());
   BOOST_CHECK_EQUAL(defaultCert0, id1Key1Cert1);
 
   // remove certificate
@@ -89,23 +81,16 @@ BOOST_AUTO_TEST_CASE(CertificateOperation)
 
   // set default certificate directly
   BOOST_REQUIRE_NO_THROW(key11.setDefaultCertificate(id1Key1Cert1));
-  BOOST_REQUIRE_NO_THROW(key11.getDefaultCertificate());
-  BOOST_CHECK_NO_THROW(key11.getCertificate(id1Key1Cert1.getName()));
-
-  // check default cert
   const auto& defaultCert1 = key11.getDefaultCertificate();
-  BOOST_CHECK_EQUAL(defaultCert1.getName(), id1Key1Cert1.getName());
   BOOST_CHECK_EQUAL(defaultCert1, id1Key1Cert1);
 
   // add another certificate
   key11.addCertificate(id1Key1Cert2);
   BOOST_CHECK_EQUAL(key11.getCertificates().size(), 2);
 
-  // set default certificate through name
-  BOOST_REQUIRE_NO_THROW(key11.setDefaultCertificate(id1Key1Cert2.getName()));
-  BOOST_REQUIRE_NO_THROW(key11.getDefaultCertificate());
+  // set default certificate through name and check return value
+  BOOST_CHECK_EQUAL(key11.setDefaultCertificate(id1Key1Cert2.getName()), id1Key1Cert2);
   const auto& defaultCert2 = key11.getDefaultCertificate();
-  BOOST_CHECK_EQUAL(defaultCert2.getName(), id1Key1Cert2.getName());
   BOOST_CHECK_EQUAL(defaultCert2, id1Key1Cert2);
 
   // remove certificate
@@ -113,10 +98,9 @@ BOOST_AUTO_TEST_CASE(CertificateOperation)
   BOOST_CHECK_THROW(key11.getCertificate(id1Key1Cert1.getName()), Pib::Error);
   BOOST_CHECK_EQUAL(key11.getCertificates().size(), 1);
 
-  // set default certificate directly again, change the default setting
+  // set removed certificate as default, certificate is implicitly added
   BOOST_REQUIRE_NO_THROW(key11.setDefaultCertificate(id1Key1Cert1));
   const auto& defaultCert3 = key11.getDefaultCertificate();
-  BOOST_CHECK_EQUAL(defaultCert3.getName(), id1Key1Cert1.getName());
   BOOST_CHECK_EQUAL(defaultCert3, id1Key1Cert1);
   BOOST_CHECK_EQUAL(key11.getCertificates().size(), 2);
 
@@ -126,60 +110,39 @@ BOOST_AUTO_TEST_CASE(CertificateOperation)
   BOOST_CHECK_EQUAL(key11.getCertificates().size(), 1);
   key11.removeCertificate(id1Key1Cert2.getName());
   BOOST_CHECK_THROW(key11.getCertificate(id1Key1Cert2.getName()), Pib::Error);
-  BOOST_CHECK_THROW(key11.getDefaultCertificate(), Pib::Error);
   BOOST_CHECK_EQUAL(key11.getCertificates().size(), 0);
+  BOOST_CHECK_THROW(key11.getDefaultCertificate(), Pib::Error);
 }
 
-class OverwriteFixture : public ndn::security::tests::PibDataFixture,
-                         public ndn::tests::IdentityManagementFixture
+class ReplaceFixture : public ndn::tests::KeyChainFixture,
+                       public KeyImplFixture
 {
 };
 
-BOOST_FIXTURE_TEST_CASE(Overwrite, OverwriteFixture)
+BOOST_FIXTURE_TEST_CASE(ReplaceCertificate, ReplaceFixture)
 {
-  auto pibImpl = make_shared<pib::PibMemory>();
-
-  BOOST_CHECK_THROW(KeyImpl(id1Key1Name, pibImpl), Pib::Error);
-  KeyImpl(id1Key1Name, id1Key1.data(), id1Key1.size(), pibImpl);
-  KeyImpl key1(id1Key1Name, pibImpl);
-
-  KeyImpl(id1Key1Name, id1Key2.data(), id1Key2.size(), pibImpl); // overwriting of the key should work
-  KeyImpl key2(id1Key1Name, pibImpl);
-
-  BOOST_CHECK(key1.getPublicKey() != key2.getPublicKey()); // key1 cached the original public key
-  BOOST_CHECK(key2.getPublicKey() == id1Key2);
-
-  key1.addCertificate(id1Key1Cert1);
-  BOOST_CHECK_EQUAL(key1.getCertificate(id1Key1Cert1.getName()), id1Key1Cert1);
+  key11.addCertificate(id1Key1Cert1);
+  BOOST_CHECK_EQUAL(key11.getCertificate(id1Key1Cert1.getName()), id1Key1Cert1);
 
   auto otherCert = id1Key1Cert1;
   SignatureInfo info;
-  info.setValidityPeriod(ValidityPeriod(time::system_clock::now(),
-                                        time::system_clock::now() + 1_s));
+  info.setValidityPeriod(ValidityPeriod::makeRelative(-1_s, 10_s));
   m_keyChain.sign(otherCert, SigningInfo().setSignatureInfo(info));
+  BOOST_TEST(otherCert.getName() == id1Key1Cert1.getName());
+  BOOST_TEST(otherCert.getContent() == id1Key1Cert1.getContent());
+  BOOST_TEST(otherCert != id1Key1Cert1);
 
-  BOOST_CHECK_EQUAL(otherCert.getName(), id1Key1Cert1.getName());
-  BOOST_CHECK(otherCert.getContent() == id1Key1Cert1.getContent());
-  BOOST_CHECK_NE(otherCert, id1Key1Cert1);
-
-  key1.addCertificate(otherCert);
-
-  BOOST_CHECK_EQUAL(key1.getCertificate(id1Key1Cert1.getName()), otherCert);
+  key11.addCertificate(otherCert); // overwrite cert
+  BOOST_TEST(key11.getCertificate(id1Key1Cert1.getName()) == otherCert);
 }
 
 BOOST_AUTO_TEST_CASE(Errors)
 {
-  auto pibImpl = make_shared<pib::PibMemory>();
+  BOOST_CHECK_THROW(KeyImpl(Name("/wrong"), id1Key1, pibImpl), std::invalid_argument);
 
-  BOOST_CHECK_THROW(KeyImpl(id1Key1Name, pibImpl), Pib::Error);
-  KeyImpl key11(id1Key1Name, id1Key1.data(), id1Key1.size(), pibImpl);
+  Buffer invalidKey;
+  BOOST_CHECK_THROW(KeyImpl(id1Key1Name, invalidKey, pibImpl), std::invalid_argument);
 
-  BOOST_CHECK_THROW(KeyImpl(Name("/wrong"), pibImpl), std::invalid_argument);
-  BOOST_CHECK_THROW(KeyImpl(Name("/wrong"), id1Key1.data(), id1Key1.size(), pibImpl), std::invalid_argument);
-  Buffer wrongKey;
-  BOOST_CHECK_THROW(KeyImpl(id1Key2Name, wrongKey.data(), wrongKey.size(), pibImpl), std::invalid_argument);
-
-  key11.addCertificate(id1Key1Cert1);
   BOOST_CHECK_THROW(key11.addCertificate(id1Key2Cert1), std::invalid_argument);
   BOOST_CHECK_THROW(key11.removeCertificate(id1Key2Cert1.getName()), std::invalid_argument);
   BOOST_CHECK_THROW(key11.getCertificate(id1Key2Cert1.getName()), std::invalid_argument);

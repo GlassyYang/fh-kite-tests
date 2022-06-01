@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2018 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -22,7 +22,9 @@
 #include "ndn-cxx/security/transform/public-key.hpp"
 
 #include "ndn-cxx/encoding/buffer-stream.hpp"
-#include "ndn-cxx/security/transform.hpp"
+#include "ndn-cxx/security/transform/base64-decode.hpp"
+#include "ndn-cxx/security/transform/buffer-source.hpp"
+#include "ndn-cxx/security/transform/stream-sink.hpp"
 
 #include "tests/boost-test.hpp"
 
@@ -41,7 +43,9 @@ BOOST_AUTO_TEST_SUITE(TestPublicKey)
 
 struct RsaKeyTestData
 {
-  const std::string publicKeyPkcs8 =
+  static constexpr KeyType type = KeyType::RSA;
+  static constexpr size_t size = 2048;
+  const std::string pkcs8Base64 =
       "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw0WM1/WhAxyLtEqsiAJg\n"
       "WDZWuzkYpeYVdeeZcqRZzzfRgBQTsNozS5t4HnwTZhwwXbH7k3QN0kRTV826Xobw\n"
       "s3iigohnM9yTK+KKiayPhIAm/+5HGT6SgFJhYhqo1/upWdueojil6RP4/AgavHho\n"
@@ -50,10 +54,14 @@ struct RsaKeyTestData
       "9rH58ynaAix0tcR/nBMRLUX+e3rURHg6UbSjJbdb9qmKM1fTGHKUzL/5pMG6uBU0\n"
       "ywIDAQAB\n";
 };
+constexpr KeyType RsaKeyTestData::type;
+constexpr size_t RsaKeyTestData::size;
 
 struct EcKeyTestData
 {
-  const std::string publicKeyPkcs8 =
+  static constexpr KeyType type = KeyType::EC;
+  static constexpr size_t size = 256;
+  const std::string pkcs8Base64 =
       "MIIBSzCCAQMGByqGSM49AgEwgfcCAQEwLAYHKoZIzj0BAQIhAP////8AAAABAAAA\n"
       "AAAAAAAAAAAA////////////////MFsEIP////8AAAABAAAAAAAAAAAAAAAA////\n"
       "///////////8BCBaxjXYqjqT57PrvVV2mIa8ZR0GsMxTsPY7zjw+J9JgSwMVAMSd\n"
@@ -62,45 +70,47 @@ struct EcKeyTestData
       "//////////+85vqtpxeehPO5ysL8YyVRAgEBA0IABGhuFibgwLdEJBDOLdvSg1Hc\n"
       "5EJTDxq6ls5FoYLfThp8HOjuwGSz0qw8ocMqyku1y0V5peQ4rEPd0bwcpZd9svA=\n";
 };
+constexpr KeyType EcKeyTestData::type;
+constexpr size_t EcKeyTestData::size;
 
 using KeyTestDataSets = boost::mpl::vector<RsaKeyTestData, EcKeyTestData>;
 
-BOOST_AUTO_TEST_CASE_TEMPLATE(SaveLoad, T, KeyTestDataSets)
+BOOST_AUTO_TEST_CASE_TEMPLATE(LoadAndSave, T, KeyTestDataSets)
 {
   T dataSet;
 
-  const uint8_t* pKeyPkcs8Base64 = reinterpret_cast<const uint8_t*>(dataSet.publicKeyPkcs8.c_str());
-  size_t pKeyPkcs8Base64Len = dataSet.publicKeyPkcs8.size();
+  auto pKeyPkcs8Base64 = make_span(reinterpret_cast<const uint8_t*>(dataSet.pkcs8Base64.data()),
+                                   dataSet.pkcs8Base64.size());
   OBufferStream os;
-  bufferSource(pKeyPkcs8Base64, pKeyPkcs8Base64Len) >> base64Decode() >> streamSink(os);
-  ConstBufferPtr pKeyPkcs8Buf = os.buf();
-  const uint8_t* pKeyPkcs8 = pKeyPkcs8Buf->data();
-  size_t pKeyPkcs8Len = pKeyPkcs8Buf->size();
+  bufferSource(pKeyPkcs8Base64) >> base64Decode() >> streamSink(os);
+  auto pKeyPkcs8 = os.buf();
 
+  // Load
   PublicKey pKey1;
-  BOOST_CHECK_NO_THROW(pKey1.loadPkcs8Base64(pKeyPkcs8Base64, pKeyPkcs8Base64Len));
+  BOOST_CHECK_NO_THROW(pKey1.loadPkcs8Base64(pKeyPkcs8Base64));
+  BOOST_TEST(pKey1.getKeyType() == T::type);
+  BOOST_TEST(pKey1.getKeySize() == T::size);
 
-  std::stringstream ss2(dataSet.publicKeyPkcs8);
+  std::stringstream ss2(dataSet.pkcs8Base64);
   PublicKey pKey2;
   BOOST_CHECK_NO_THROW(pKey2.loadPkcs8Base64(ss2));
 
   PublicKey pKey3;
-  BOOST_CHECK_NO_THROW(pKey3.loadPkcs8(pKeyPkcs8, pKeyPkcs8Len));
+  BOOST_CHECK_NO_THROW(pKey3.loadPkcs8(*pKeyPkcs8));
 
   std::stringstream ss4;
-  ss4.write(reinterpret_cast<const char*>(pKeyPkcs8), pKeyPkcs8Len);
+  ss4.write(reinterpret_cast<const char*>(pKeyPkcs8->data()), pKeyPkcs8->size());
   PublicKey pKey4;
   BOOST_CHECK_NO_THROW(pKey4.loadPkcs8(ss4));
 
+  // Save
   OBufferStream os5;
   BOOST_REQUIRE_NO_THROW(pKey1.savePkcs8Base64(os5));
-  BOOST_CHECK_EQUAL_COLLECTIONS(pKeyPkcs8Base64, pKeyPkcs8Base64 + pKeyPkcs8Base64Len,
-                                os5.buf()->begin(), os5.buf()->end());
+  BOOST_TEST(*os5.buf() == pKeyPkcs8Base64, boost::test_tools::per_element());
 
   OBufferStream os6;
   BOOST_REQUIRE_NO_THROW(pKey1.savePkcs8(os6));
-  BOOST_CHECK_EQUAL_COLLECTIONS(pKeyPkcs8, pKeyPkcs8 + pKeyPkcs8Len,
-                                os6.buf()->begin(), os6.buf()->end());
+  BOOST_TEST(*os6.buf() == *pKeyPkcs8, boost::test_tools::per_element());
 }
 
 // NOTE: We cannot test RSA encryption by comparing the computed ciphertext to
@@ -113,14 +123,13 @@ BOOST_AUTO_TEST_CASE(UnsupportedEcEncryption)
   EcKeyTestData dataSet;
 
   PublicKey pKey;
-  pKey.loadPkcs8Base64(reinterpret_cast<const uint8_t*>(dataSet.publicKeyPkcs8.c_str()),
-                       dataSet.publicKeyPkcs8.size());
-  BOOST_CHECK_EQUAL(pKey.getKeyType(), KeyType::EC);
+  pKey.loadPkcs8Base64({reinterpret_cast<const uint8_t*>(dataSet.pkcs8Base64.data()),
+                        dataSet.pkcs8Base64.size()});
 
   OBufferStream os;
   bufferSource("Y2lhbyFob2xhIWhlbGxvIQ==") >> base64Decode() >> streamSink(os);
 
-  BOOST_CHECK_THROW(pKey.encrypt(os.buf()->data(), os.buf()->size()), PublicKey::Error);
+  BOOST_CHECK_THROW(pKey.encrypt(*os.buf()), PublicKey::Error);
 }
 
 BOOST_AUTO_TEST_SUITE_END() // TestPublicKey

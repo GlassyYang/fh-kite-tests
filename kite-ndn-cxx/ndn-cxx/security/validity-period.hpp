@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_SECURITY_VALIDITY_PERIOD_HPP
-#define NDN_SECURITY_VALIDITY_PERIOD_HPP
+#ifndef NDN_CXX_SECURITY_VALIDITY_PERIOD_HPP
+#define NDN_CXX_SECURITY_VALIDITY_PERIOD_HPP
 
 #include "ndn-cxx/detail/common.hpp"
 #include "ndn-cxx/encoding/tlv.hpp"
@@ -30,9 +30,9 @@
 namespace ndn {
 namespace security {
 
-
-/** @brief Abstraction of validity period
- *  @sa docs/specs/certificate-format.rst
+/**
+ * @brief Represents a %ValidityPeriod TLV element.
+ * @sa <a href="../specs/certificate.html">NDN Certificate Format</a>
  */
 class ValidityPeriod
 {
@@ -43,7 +43,18 @@ public:
     using tlv::Error::Error;
   };
 
-public:
+  /**
+   * @brief Construct ValidityPeriod relative to a timepoint.
+   * @param validFrom NotBefore is computed as @c now+validFrom .
+   *                  This should be negative to construct a ValidityPeriod that includes @p now .
+   * @param validUntil NotAfter is computed as @c now+validTo .
+   *                   This should be positive to construct a ValidityPeriod that includes @p now .
+   * @param now Reference timepoint. Default is current system clock timestamp.
+   */
+  static ValidityPeriod
+  makeRelative(time::seconds validFrom, time::seconds validUntil,
+               const time::system_clock::TimePoint& now = time::system_clock::now());
+
   /** @brief Set validity period [UNIX epoch + 1 nanosecond, UNIX epoch] that is always invalid
    */
   ValidityPeriod();
@@ -139,4 +150,4 @@ operator<<(std::ostream& os, const ValidityPeriod& period);
 } // namespace security
 } // namespace ndn
 
-#endif // NDN_SECURITY_VALIDITY_PERIOD_HPP
+#endif // NDN_CXX_SECURITY_VALIDITY_PERIOD_HPP

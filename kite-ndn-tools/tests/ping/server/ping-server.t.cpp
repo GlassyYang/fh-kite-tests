@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2014-2018,  Arizona Board of Regents.
+ * Copyright (c) 2014-2022,  Arizona Board of Regents.
  *
  * This file is part of ndn-tools (Named Data Networking Essential Tools).
  * See AUTHORS.md for complete list of ndn-tools authors and contributors.
@@ -20,30 +20,18 @@
 #include "tools/ping/server/ping-server.hpp"
 
 #include "tests/test-common.hpp"
-#include "../../identity-management-fixture.hpp"
+#include "tests/io-fixture.hpp"
+#include "tests/key-chain-fixture.hpp"
 
 #include <ndn-cxx/util/dummy-client-face.hpp>
 
-namespace ndn {
-namespace ping {
-namespace server {
-namespace tests {
+namespace ndn::ping::server::tests {
 
 using namespace ndn::tests;
 
-BOOST_AUTO_TEST_SUITE(Ping)
-BOOST_AUTO_TEST_SUITE(TestPingServer)
-
-class CreatePingServerFixture : public IdentityManagementTimeFixture
+class PingServerFixture : public IoFixture, public KeyChainFixture
 {
 protected:
-  CreatePingServerFixture()
-    : face(io, m_keyChain, {false, true})
-    , pingOptions(makeOptions())
-    , pingServer(face, m_keyChain, pingOptions)
-  {
-  }
-
   Interest
   makePingInterest(int seq) const
   {
@@ -52,7 +40,6 @@ protected:
         .append(to_string(seq));
 
     return Interest(name)
-           .setCanBePrefix(false)
            .setMustBeFresh(true)
            .setInterestLifetime(2_s);
   }
@@ -72,31 +59,30 @@ private:
   }
 
 protected:
-  boost::asio::io_service io;
-  util::DummyClientFace face;
-  Options pingOptions;
-  PingServer pingServer;
+  util::DummyClientFace face{m_io, m_keyChain, {false, true}};
+  Options pingOptions{makeOptions()};
+  PingServer pingServer{face, m_keyChain, pingOptions};
 };
 
-BOOST_FIXTURE_TEST_CASE(CreatePingServer, CreatePingServerFixture)
+BOOST_AUTO_TEST_SUITE(Ping)
+BOOST_AUTO_TEST_SUITE(TestServer)
+
+BOOST_FIXTURE_TEST_CASE(Receive, PingServerFixture)
 {
-  BOOST_REQUIRE_EQUAL(0, pingServer.getNPings());
+  BOOST_TEST(pingServer.getNPings() == 0);
   pingServer.start();
 
-  advanceClocks(io, 1_ms, 200);
+  advanceClocks(1_ms, 200);
 
   face.receive(makePingInterest(1000));
   face.receive(makePingInterest(1001));
 
-  io.run();
+  m_io.run();
 
-  BOOST_CHECK_EQUAL(2, pingServer.getNPings());
+  BOOST_TEST(pingServer.getNPings() == 2);
 }
 
-BOOST_AUTO_TEST_SUITE_END() // TestPingServer
+BOOST_AUTO_TEST_SUITE_END() // TestServer
 BOOST_AUTO_TEST_SUITE_END() // Ping
 
-} // namespace tests
-} // namespace server
-} // namespace ping
-} // namespace ndn
+} // namespace ndn::ping::server::tests

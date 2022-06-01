@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2021 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -305,7 +305,7 @@ NetworkMonitorImplNetlink::parseLinkMessage(const NetlinkMessage& nlmsg)
     interface->setMtu(*mtu);
 
   auto state = attrs.getAttributeByType<uint8_t>(IFLA_OPERSTATE);
-  updateInterfaceState(*interface, state ? *state : linux_if::OPER_STATE_UNKNOWN);
+  updateInterfaceState(*interface, state.value_or(linux_if::OPER_STATE_UNKNOWN));
 
   if (it == m_interfaces.end()) {
     NDN_LOG_DEBUG("  adding interface " << interface->getName());
@@ -362,6 +362,12 @@ NetworkMonitorImplNetlink::parseAddressMessage(const NetlinkMessage& nlmsg)
   if (extFlags)
     flags = *extFlags;
 #endif // NDN_CXX_HAVE_IFA_FLAGS
+
+  if ((flags & IFA_F_TENTATIVE) && nlmsg->nlmsg_type == RTM_NEWADDR) {
+    // https://redmine.named-data.net/issues/5155#note-10
+    NDN_LOG_DEBUG("  ignoring tentative address " << ipAddr);
+    return;
+  }
 
   NetworkAddress address(ifaFamilyToAddressFamily(ifa->ifa_family),
                          ipAddr,

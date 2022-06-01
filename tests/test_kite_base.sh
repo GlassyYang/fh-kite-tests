@@ -1,7 +1,5 @@
 source ./test_common.sh
 
-set -x
-
 NFD3_INIT="nfdc route add /kite-test/rv tcp://${NFD2_ADDR}:6363"
 NFD1_INIT="nfdc route add /kite-test/rv tcp://${NFD2_ADDR}:6363"
 

@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -42,7 +42,7 @@ BOOST_CONCEPT_ASSERT((WireDecodable<Component>));
 static_assert(std::is_base_of<tlv::Error, Component::Error>::value,
               "name::Component::Error must inherit from tlv::Error");
 
-static Convention g_conventionEncoding = Convention::MARKER;
+static Convention g_conventionEncoding = Convention::TYPED;
 static Convention g_conventionDecoding = Convention::EITHER;
 
 Convention
@@ -122,7 +122,7 @@ Component::ensureValid() const
   if (type() < tlv::NameComponentMin || type() > tlv::NameComponentMax) {
     NDN_THROW(Error("TLV-TYPE " + to_string(type()) + " is not a valid NameComponent"));
   }
-  detail::getComponentTypeTable().get(type()).check(*this);
+  getComponentTypeTable().get(type()).check(*this);
 }
 
 Component::Component(uint32_t type)
@@ -143,8 +143,8 @@ Component::Component(uint32_t type, ConstBufferPtr buffer)
   ensureValid();
 }
 
-Component::Component(uint32_t type, const uint8_t* value, size_t valueLen)
-  : Block(makeBinaryBlock(type, value, valueLen))
+Component::Component(uint32_t type, span<const uint8_t> value)
+  : Block(makeBinaryBlock(type, value))
 {
   ensureValid();
 }
@@ -169,9 +169,9 @@ parseUriEscapedValue(uint32_t type, const char* input, size_t len)
     if (value.size() < 3) {
       NDN_THROW(Component::Error("Illegal URI (name component cannot be . or ..)"));
     }
-    return Component(type, reinterpret_cast<const uint8_t*>(value.data()), value.size() - 3);
+    return Component(type, {reinterpret_cast<const uint8_t*>(value.data()), value.size() - 3});
   }
-  return Component(type, reinterpret_cast<const uint8_t*>(value.data()), value.size());
+  return Component(type, {reinterpret_cast<const uint8_t*>(value.data()), value.size()});
 }
 
 Component
@@ -191,7 +191,7 @@ Component::fromEscapedString(const std::string& input)
                                 input.data() + valuePos, input.size() - valuePos);
   }
 
-  auto ct = detail::getComponentTypeTable().findByUriPrefix(typePrefix);
+  auto ct = getComponentTypeTable().findByUriPrefix(typePrefix);
   if (ct == nullptr) {
     NDN_THROW(Error("Unknown TLV-TYPE '" + typePrefix + "' in NameComponent URI"));
   }
@@ -202,10 +202,10 @@ void
 Component::toUri(std::ostream& os, UriFormat format) const
 {
   if (wantAltUri(format)) {
-    detail::getComponentTypeTable().get(type()).writeUri(os, *this);
+    getComponentTypeTable().get(type()).writeUri(os, *this);
   }
   else {
-    detail::ComponentType().writeUri(os, *this);
+    ComponentType().writeUri(os, *this);
   }
 }
 
@@ -234,13 +234,6 @@ Component::isNumberWithMarker(uint8_t marker) const
 }
 
 bool
-Component::isVersion() const
-{
-  return (canDecodeMarkerConvention() && type() == tlv::GenericNameComponent && isNumberWithMarker(VERSION_MARKER)) ||
-         (canDecodeTypedConvention() && type() == tlv::VersionNameComponent && isNumber());
-}
-
-bool
 Component::isSegment() const
 {
   return (canDecodeMarkerConvention() && type() == tlv::GenericNameComponent && isNumberWithMarker(SEGMENT_MARKER)) ||
@@ -252,6 +245,13 @@ Component::isByteOffset() const
 {
   return (canDecodeMarkerConvention() && type() == tlv::GenericNameComponent && isNumberWithMarker(SEGMENT_OFFSET_MARKER)) ||
          (canDecodeTypedConvention() && type() == tlv::ByteOffsetNameComponent && isNumber());
+}
+
+bool
+Component::isVersion() const
+{
+  return (canDecodeMarkerConvention() && type() == tlv::GenericNameComponent && isNumberWithMarker(VERSION_MARKER)) ||
+         (canDecodeTypedConvention() && type() == tlv::VersionNameComponent && isNumber());
 }
 
 bool
@@ -274,7 +274,7 @@ uint64_t
 Component::toNumber() const
 {
   if (!isNumber())
-    NDN_THROW(Error("Name component does not have nonNegativeInteger value"));
+    NDN_THROW(Error("Name component does not have NonNegativeInteger value"));
 
   return readNonNegativeInteger(*this);
 }
@@ -284,22 +284,10 @@ Component::toNumberWithMarker(uint8_t marker) const
 {
   if (!isNumberWithMarker(marker))
     NDN_THROW(Error("Name component does not have the requested marker "
-                    "or the value is not a nonNegativeInteger"));
+                    "or the value is not a NonNegativeInteger"));
 
-  Buffer::const_iterator valueBegin = value_begin() + 1;
+  auto valueBegin = value_begin() + 1;
   return tlv::readNonNegativeInteger(value_size() - 1, valueBegin, value_end());
-}
-
-uint64_t
-Component::toVersion() const
-{
-  if (canDecodeMarkerConvention() && type() == tlv::GenericNameComponent) {
-    return toNumberWithMarker(VERSION_MARKER);
-  }
-  if (canDecodeTypedConvention() && type() == tlv::VersionNameComponent) {
-    return toNumber();
-  }
-  NDN_THROW(Error("Not a Version component"));
 }
 
 uint64_t
@@ -326,7 +314,19 @@ Component::toByteOffset() const
   NDN_THROW(Error("Not a ByteOffset component"));
 }
 
-time::system_clock::TimePoint
+uint64_t
+Component::toVersion() const
+{
+  if (canDecodeMarkerConvention() && type() == tlv::GenericNameComponent) {
+    return toNumberWithMarker(VERSION_MARKER);
+  }
+  if (canDecodeTypedConvention() && type() == tlv::VersionNameComponent) {
+    return toNumber();
+  }
+  NDN_THROW(Error("Not a Version component"));
+}
+
+time::system_clock::time_point
 Component::toTimestamp() const
 {
   uint64_t value = 0;
@@ -359,35 +359,26 @@ Component::toSequenceNumber() const
 Component
 Component::fromNumber(uint64_t number, uint32_t type)
 {
-  return makeNonNegativeIntegerBlock(type, number);
+  return Component(makeNonNegativeIntegerBlock(type, number));
 }
 
 Component
 Component::fromNumberWithMarker(uint8_t marker, uint64_t number)
 {
   EncodingEstimator estimator;
-
   size_t valueLength = estimator.prependNonNegativeInteger(number);
-  valueLength += estimator.prependByteArray(&marker, 1);
+  valueLength += estimator.prependBytes({marker});
   size_t totalLength = valueLength;
   totalLength += estimator.prependVarNumber(valueLength);
   totalLength += estimator.prependVarNumber(tlv::GenericNameComponent);
 
   EncodingBuffer encoder(totalLength, 0);
   encoder.prependNonNegativeInteger(number);
-  encoder.prependByteArray(&marker, 1);
+  encoder.prependBytes({marker});
   encoder.prependVarNumber(valueLength);
   encoder.prependVarNumber(tlv::GenericNameComponent);
 
-  return encoder.block();
-}
-
-Component
-Component::fromVersion(uint64_t version)
-{
-  return g_conventionEncoding == Convention::MARKER ?
-         fromNumberWithMarker(VERSION_MARKER, version) :
-         fromNumber(version, tlv::VersionNameComponent);
+  return Component(encoder.block());
 }
 
 Component
@@ -407,7 +398,15 @@ Component::fromByteOffset(uint64_t offset)
 }
 
 Component
-Component::fromTimestamp(const time::system_clock::TimePoint& timePoint)
+Component::fromVersion(uint64_t version)
+{
+  return g_conventionEncoding == Convention::MARKER ?
+         fromNumberWithMarker(VERSION_MARKER, version) :
+         fromNumber(version, tlv::VersionNameComponent);
+}
+
+Component
+Component::fromTimestamp(const time::system_clock::time_point& timePoint)
 {
   uint64_t value = time::duration_cast<time::microseconds>(timePoint - time::getUnixEpoch()).count();
   return g_conventionEncoding == Convention::MARKER ?
@@ -426,45 +425,39 @@ Component::fromSequenceNumber(uint64_t seqNo)
 ////////////////////////////////////////////////////////////////////////////////
 
 bool
-Component::isGeneric() const
-{
-  return type() == tlv::GenericNameComponent;
-}
-
-bool
 Component::isImplicitSha256Digest() const
 {
-  return detail::getComponentType1().match(*this);
+  return type() == tlv::ImplicitSha256DigestComponent && value_size() == util::Sha256::DIGEST_SIZE;
 }
 
 Component
 Component::fromImplicitSha256Digest(ConstBufferPtr digest)
 {
-  return detail::getComponentType1().create(digest);
+  return {tlv::ImplicitSha256DigestComponent, std::move(digest)};
 }
 
 Component
-Component::fromImplicitSha256Digest(const uint8_t* digest, size_t digestSize)
+Component::fromImplicitSha256Digest(span<const uint8_t> digest)
 {
-  return detail::getComponentType1().create(digest, digestSize);
+  return {tlv::ImplicitSha256DigestComponent, digest};
 }
 
 bool
 Component::isParametersSha256Digest() const
 {
-  return detail::getComponentType2().match(*this);
+  return type() == tlv::ParametersSha256DigestComponent && value_size() == util::Sha256::DIGEST_SIZE;
 }
 
 Component
 Component::fromParametersSha256Digest(ConstBufferPtr digest)
 {
-  return detail::getComponentType2().create(digest);
+  return {tlv::ParametersSha256DigestComponent, std::move(digest)};
 }
 
 Component
-Component::fromParametersSha256Digest(const uint8_t* digest, size_t digestSize)
+Component::fromParametersSha256Digest(span<const uint8_t> digest)
 {
-  return detail::getComponentType2().create(digest, digestSize);
+  return {tlv::ParametersSha256DigestComponent, digest};
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -485,7 +478,7 @@ Component::compare(const Component& other) const
     // it's more efficient to simply compare the wire encoding.
     // This works because lexical order of TLV encoding happens to be
     // the same as canonical order of the value.
-    return std::memcmp(wire(), other.wire(), std::min(size(), other.size()));
+    return std::memcmp(data(), other.data(), std::min(size(), other.size()));
   }
 
   int cmpType = type() - other.type();
@@ -507,15 +500,14 @@ Component::getSuccessor() const
 {
   bool isOverflow = false;
   Component successor;
-  std::tie(isOverflow, successor) =
-    detail::getComponentTypeTable().get(type()).getSuccessor(*this);
+  std::tie(isOverflow, successor) = getComponentTypeTable().get(type()).getSuccessor(*this);
   if (!isOverflow) {
     return successor;
   }
 
   uint32_t type = this->type() + 1;
-  const std::vector<uint8_t>& value = detail::getComponentTypeTable().get(type).getMinValue();
-  return Component(type, value.data(), value.size());
+  auto value = getComponentTypeTable().get(type).getMinValue();
+  return {type, value};
 }
 
 template<encoding::Tag TAG>
@@ -523,8 +515,9 @@ size_t
 Component::wireEncode(EncodingImpl<TAG>& encoder) const
 {
   size_t totalLength = 0;
-  if (value_size() > 0)
-    totalLength += encoder.prependByteArray(value(), value_size());
+  if (value_size() > 0) {
+    totalLength += encoder.prependBytes(value_bytes());
+  }
   totalLength += encoder.prependVarNumber(value_size());
   totalLength += encoder.prependVarNumber(type());
   return totalLength;
@@ -544,14 +537,14 @@ Component::wireEncode() const
   EncodingBuffer buffer(estimatedSize, 0);
   wireEncode(buffer);
 
-  const_cast<Component&>(*this) = buffer.block();
+  const_cast<Component*>(this)->wireDecode(buffer.block());
   return *this;
 }
 
 void
 Component::wireDecode(const Block& wire)
 {
-  *this = wire;
+  *this = Component(wire);
   // validity check is done within Component(const Block& wire)
 }
 

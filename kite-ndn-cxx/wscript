@@ -3,15 +3,13 @@
 from waflib import Context, Logs, Utils
 import os, subprocess
 
-VERSION = '0.7.1'
+VERSION = '0.8.0'
 APPNAME = 'ndn-cxx'
-PACKAGE_BUGREPORT = 'https://redmine.named-data.net/projects/ndn-cxx'
-PACKAGE_URL = 'http://named-data.net/doc/ndn-cxx/'
 GIT_TAG_PREFIX = 'ndn-cxx-'
 
 def options(opt):
     opt.load(['compiler_cxx', 'gnu_dirs', 'c_osx'])
-    opt.load(['default-compiler-flags', 'compiler-features',
+    opt.load(['cross', 'default-compiler-flags', 'compiler-features',
               'coverage', 'pch', 'sanitizers', 'osx-frameworks',
               'boost', 'openssl', 'sqlite3',
               'doxygen', 'sphinx_build'],
@@ -71,7 +69,7 @@ def configure(conf):
     if not conf.options.enable_shared and not conf.options.enable_static:
         conf.fatal('Either static library or shared library must be enabled')
 
-    conf.load(['compiler_cxx', 'gnu_dirs', 'c_osx',
+    conf.load(['cross', 'compiler_cxx', 'gnu_dirs', 'c_osx',
                'default-compiler-flags', 'compiler-features',
                'pch', 'osx-frameworks', 'boost', 'openssl', 'sqlite3',
                'doxygen', 'sphinx_build'])
@@ -80,7 +78,7 @@ def configure(conf):
     conf.env.WITH_TOOLS = conf.options.with_tools
     conf.env.WITH_EXAMPLES = conf.options.with_examples
 
-    conf.find_program('sh', var='SH')
+    conf.find_program('dot', var='DOT', mandatory=False)
 
     conf.check_cxx(lib='atomic', uselib_store='ATOMIC', define_name='HAVE_ATOMIC', mandatory=False)
     conf.check_cxx(lib='pthread', uselib_store='PTHREAD', define_name='HAVE_PTHREAD', mandatory=False)
@@ -103,14 +101,14 @@ def configure(conf):
 
     conf.check_osx_frameworks()
     conf.check_sqlite3()
-    conf.check_openssl(lib='crypto', atleast_version=0x1000200f) # 1.0.2
+    conf.check_openssl(lib='crypto', atleast_version='1.1.1')
 
     boost_libs = ['system', 'program_options', 'chrono', 'date_time', 'filesystem', 'thread', 'log']
 
     stacktrace_backend = conf.options.with_stacktrace
     if stacktrace_backend is None:
         # auto-detect
-        for candidate in ['backtrace', 'basic']:
+        for candidate in ('backtrace', 'basic'):
             try:
                 conf.check_boost(lib='stacktrace_%s' % candidate, mt=True)
             except conf.errors.ConfigurationError:
@@ -126,18 +124,16 @@ def configure(conf):
         boost_libs.append('unit_test_framework')
 
     conf.check_boost(lib=boost_libs, mt=True)
-    if conf.env.BOOST_VERSION_NUMBER < 105800:
+    if conf.env.BOOST_VERSION_NUMBER < 106501:
         conf.fatal('The minimum supported version of Boost is 1.65.1.\n'
                    'Please upgrade your distribution or manually install a newer version of Boost.\n'
                    'For more information, see https://redmine.named-data.net/projects/nfd/wiki/Boost')
-    elif conf.env.BOOST_VERSION_NUMBER < 106501:
-        Logs.warn('WARNING: Using a version of Boost older than 1.65.1 is not officially supported and may not work.\n'
-                  'If you encounter any problems, please upgrade your distribution or manually install a newer version of Boost.\n'
-                  'For more information, see https://redmine.named-data.net/projects/nfd/wiki/Boost')
 
     # Workaround for bug 4860
     if conf.env.BOOST_VERSION_NUMBER < 106900 and conf.env.CXX_NAME == 'clang':
         conf.env.append_unique('DEFINES_BOOST', ['BOOST_ASIO_DISABLE_STD_EXPERIMENTAL_STRING_VIEW'])
+
+    conf.env.append_unique('DEFINES_BOOST', ['BOOST_FILESYSTEM_NO_DEPRECATED'])
 
     conf.check_compiler_flags()
 
@@ -190,9 +186,10 @@ def build(bld):
     libndn_cxx = dict(
         target='ndn-cxx',
         source=bld.path.ant_glob('ndn-cxx/**/*.cpp',
-                                 excl=['ndn-cxx/**/*-osx.cpp',
-                                       'ndn-cxx/**/*netlink*.cpp',
-                                       'ndn-cxx/**/*-sqlite3.cpp']),
+                                 excl=['ndn-cxx/**/*-android.cpp',
+                                       'ndn-cxx/**/*-osx.cpp',
+                                       'ndn-cxx/**/*-sqlite3.cpp',
+                                       'ndn-cxx/**/*netlink*.cpp']),
         features='pch',
         headers='ndn-cxx/impl/common-pch.hpp',
         use='ndn-cxx-mm-objects version BOOST OPENSSL SQLITE3 ATOMIC RT PTHREAD',
@@ -200,15 +197,18 @@ def build(bld):
         export_includes='.',
         install_path='${LIBDIR}')
 
+    if bld.env.HOST == 'android':
+        libndn_cxx['source'] += bld.path.ant_glob('ndn-cxx/**/*-android.cpp')
+
     if bld.env.HAVE_OSX_FRAMEWORKS:
         libndn_cxx['source'] += bld.path.ant_glob('ndn-cxx/**/*-osx.cpp')
         libndn_cxx['use'] += ' OSX_COREFOUNDATION OSX_SECURITY OSX_SYSTEMCONFIGURATION OSX_FOUNDATION OSX_COREWLAN'
 
-    if bld.env.HAVE_NETLINK:
-        libndn_cxx['source'] += bld.path.ant_glob('ndn-cxx/**/*netlink*.cpp')
-
     # In case we want to make it optional later
     libndn_cxx['source'] += bld.path.ant_glob('ndn-cxx/**/*-sqlite3.cpp')
+
+    if bld.env.HAVE_NETLINK:
+        libndn_cxx['source'] += bld.path.ant_glob('ndn-cxx/**/*netlink*.cpp')
 
     if bld.env.enable_shared:
         bld.shlib(name='ndn-cxx',
@@ -274,25 +274,29 @@ def build(bld):
         bld.recurse('examples')
 
     headers = bld.path.ant_glob('ndn-cxx/**/*.hpp',
-                                excl=['ndn-cxx/**/*-osx.hpp',
-                                      'ndn-cxx/**/*netlink*.hpp',
+                                excl=['ndn-cxx/**/*-android.hpp',
+                                      'ndn-cxx/**/*-osx.hpp',
                                       'ndn-cxx/**/*-sqlite3.hpp',
+                                      'ndn-cxx/**/*netlink*.hpp',
                                       'ndn-cxx/**/impl/**/*'])
+
+    if bld.env.HOST == 'android':
+        headers += bld.path.ant_glob('ndn-cxx/**/*-android.hpp', excl='ndn-cxx/**/impl/**/*')
 
     if bld.env.HAVE_OSX_FRAMEWORKS:
         headers += bld.path.ant_glob('ndn-cxx/**/*-osx.hpp', excl='ndn-cxx/**/impl/**/*')
 
-    if bld.env.HAVE_NETLINK:
-        headers += bld.path.ant_glob('ndn-cxx/**/*netlink*.hpp', excl='ndn-cxx/**/impl/**/*')
-
     # In case we want to make it optional later
     headers += bld.path.ant_glob('ndn-cxx/**/*-sqlite3.hpp', excl='ndn-cxx/**/impl/**/*')
 
-    bld.install_files(bld.env.INCLUDEDIR, headers, relative_trick=True)
+    if bld.env.HAVE_NETLINK:
+        headers += bld.path.ant_glob('ndn-cxx/**/*netlink*.hpp', excl='ndn-cxx/**/impl/**/*')
+
+    bld.install_files('${INCLUDEDIR}', headers, relative_trick=True)
 
     # Install generated headers
-    for filename in ['ndn-cxx/detail/config.hpp', 'ndn-cxx/version.hpp']:
-        bld.install_files('%s/%s' % (bld.env.INCLUDEDIR, os.path.dirname(filename)),
+    for filename in ('ndn-cxx/detail/config.hpp', 'ndn-cxx/version.hpp'):
+        bld.install_files('${INCLUDEDIR}/%s' % os.path.dirname(filename),
                           bld.path.find_resource(filename))
 
     bld.install_files('${SYSCONFDIR}/ndn', 'client.conf.sample')
@@ -325,6 +329,7 @@ def doxygen(bld):
         target=['docs/doxygen.conf',
                 'docs/named_data_theme/named_data_footer-with-analytics.html'],
         VERSION=VERSION,
+        HAVE_DOT='YES' if bld.env.DOT else 'NO',
         HTML_FOOTER='../build/docs/named_data_theme/named_data_footer-with-analytics.html' \
                         if os.getenv('GOOGLE_ANALYTICS', None) \
                         else '../docs/named_data_theme/named_data_footer.html',

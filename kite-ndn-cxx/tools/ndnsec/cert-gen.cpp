@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2020 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -63,8 +63,10 @@ ndnsec_cert_gen(int argc, char** argv)
                        "\"affiliation University of California, Los Angeles\"); "
                        "this option may be repeated multiple times")
     ("sign-id,s",      po::value<Name>(&signId), "signing identity")
-    ("issuer-id,i",    po::value<std::string>(&issuerId)->default_value("NA"),
-                       "issuer's ID to be included in the issued certificate name")
+    ("issuer-id,i",    po::value<std::string>(&issuerId),
+                       ("issuer's ID to be included in the issued certificate name, interpreted as "
+                        "name component in URI format (default: \"" +
+                        security::Certificate::DEFAULT_ISSUER_ID.toUri() + "\")").data())
     ;
 
   po::positional_options_description p;
@@ -86,10 +88,10 @@ ndnsec_cert_gen(int argc, char** argv)
     return 0;
   }
 
-  security::v2::AdditionalDescription additionalDescription;
+  security::AdditionalDescription additionalDescription;
 
   for (const auto& info : infos) {
-    auto pos = info.find(" ");
+    auto pos = info.find(' ');
     if (pos == std::string::npos) {
       std::cerr << "ERROR: incorrectly formatted info block [" << info << "]" << std::endl;
       return 2;
@@ -122,53 +124,30 @@ ndnsec_cert_gen(int argc, char** argv)
     }
   }
 
-  security::v2::KeyChain keyChain;
+  KeyChain keyChain;
 
-  security::v2::Certificate certRequest;
-  try {
-    certRequest = loadCertificate(requestFile);
+  auto request = loadFromFile<security::Certificate>(requestFile);
+
+  security::SigningInfo signer;
+  if (vm.count("sign-id") > 0) {
+    signer.setSigningIdentity(signId);
   }
-  catch (const CannotLoadCertificate&) {
-    std::cerr << "ERROR: Cannot load the request from `" << requestFile << "`" << std::endl;
-    return 1;
-  }
-
-  // validate that the content is a public key
-  Buffer keyContent = certRequest.getPublicKey();
-  security::transform::PublicKey pubKey;
-  pubKey.loadPkcs8(keyContent.data(), keyContent.size());
-
-  Name certName = certRequest.getKeyName();
-  certName
-    .append(issuerId)
-    .appendVersion();
-
-  security::v2::Certificate cert;
-  cert.setName(certName);
-  cert.setContent(certRequest.getContent());
-  // TODO: add ability to customize
-  cert.setFreshnessPeriod(1_h);
-
-  SignatureInfo signatureInfo;
-  signatureInfo.setValidityPeriod(security::ValidityPeriod(notBefore, notAfter));
   if (!additionalDescription.empty()) {
-    signatureInfo.addCustomTlv(additionalDescription.wireEncode());
+    SignatureInfo sigInfo;
+    sigInfo.addCustomTlv(additionalDescription.wireEncode());
+    signer.setSignatureInfo(sigInfo);
   }
 
-  security::Identity identity;
-  if (vm.count("sign-id") == 0) {
-    identity = keyChain.getPib().getDefaultIdentity();
+  security::MakeCertificateOptions opts;
+  if (vm.count("issuer-id") > 0) {
+    opts.issuerId = name::Component::fromEscapedString(issuerId);
   }
-  else {
-    identity = keyChain.getPib().getIdentity(signId);
-  }
+  opts.validity.emplace(notBefore, notAfter);
+  auto cert = keyChain.makeCertificate(request, signer, opts);
 
-  keyChain.sign(cert, security::SigningInfo(identity).setSignatureInfo(signatureInfo));
-
-  const Block& wire = cert.wireEncode();
   {
     using namespace security::transform;
-    bufferSource(wire.wire(), wire.size()) >> base64Encode(true) >> streamSink(std::cout);
+    bufferSource(cert.wireEncode()) >> base64Encode(true) >> streamSink(std::cout);
   }
 
   return 0;

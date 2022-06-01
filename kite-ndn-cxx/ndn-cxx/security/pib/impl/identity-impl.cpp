@@ -1,6 +1,6 @@
 /* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
 /*
- * Copyright (c) 2013-2019 Regents of the University of California.
+ * Copyright (c) 2013-2022 Regents of the University of California.
  *
  * This file is part of ndn-cxx library (NDN C++ library with eXperimental eXtensions).
  *
@@ -21,34 +21,29 @@
 
 #include "ndn-cxx/security/pib/impl/identity-impl.hpp"
 #include "ndn-cxx/security/pib/pib-impl.hpp"
-#include "ndn-cxx/security/pib/pib.hpp"
+#include "ndn-cxx/util/logger.hpp"
 
 namespace ndn {
 namespace security {
 namespace pib {
 namespace detail {
 
-IdentityImpl::IdentityImpl(const Name& identityName, shared_ptr<PibImpl> pibImpl, bool needInit)
+NDN_LOG_INIT(ndn.security.Identity);
+
+IdentityImpl::IdentityImpl(const Name& identityName, shared_ptr<PibImpl> pibImpl)
   : m_name(identityName)
   , m_pib(std::move(pibImpl))
-  , m_keys(identityName, m_pib)
-  , m_isDefaultKeyLoaded(false)
+  , m_keys(m_name, m_pib)
 {
   BOOST_ASSERT(m_pib != nullptr);
-
-  if (needInit) {
-    m_pib->addIdentity(m_name);
-  }
-  else if (!m_pib->hasIdentity(m_name)) {
-    NDN_THROW(Pib::Error("Identity " + m_name.toUri() + " does not exist"));
-  }
+  BOOST_ASSERT(m_pib->hasIdentity(m_name));
 }
 
 Key
-IdentityImpl::addKey(const uint8_t* key, size_t keyLen, const Name& keyName)
+IdentityImpl::addKey(span<const uint8_t> key, const Name& keyName)
 {
   BOOST_ASSERT(m_keys.isConsistent());
-  return m_keys.add(key, keyLen, keyName);
+  return m_keys.add(key, keyName);
 }
 
 void
@@ -56,55 +51,38 @@ IdentityImpl::removeKey(const Name& keyName)
 {
   BOOST_ASSERT(m_keys.isConsistent());
 
-  if (m_isDefaultKeyLoaded && m_defaultKey.getName() == keyName)
-    m_isDefaultKeyLoaded = false;
-
+  if (m_defaultKey && m_defaultKey.getName() == keyName) {
+    NDN_LOG_DEBUG("Removing default key " << keyName);
+    m_defaultKey = {};
+  }
   m_keys.remove(keyName);
 }
 
 Key
-IdentityImpl::getKey(const Name& keyName) const
+IdentityImpl::setDefaultKey(Key key)
 {
   BOOST_ASSERT(m_keys.isConsistent());
-  return m_keys.get(keyName);
-}
+  BOOST_ASSERT(key);
 
-const KeyContainer&
-IdentityImpl::getKeys() const
-{
-  BOOST_ASSERT(m_keys.isConsistent());
-  return m_keys;
-}
+  m_defaultKey = std::move(key);
+  m_pib->setDefaultKeyOfIdentity(m_name, m_defaultKey.getName());
+  NDN_LOG_DEBUG("Default key set to " << m_defaultKey.getName());
 
-const Key&
-IdentityImpl::setDefaultKey(const Name& keyName)
-{
-  BOOST_ASSERT(m_keys.isConsistent());
-
-  m_defaultKey = m_keys.get(keyName);
-  m_isDefaultKeyLoaded = true;
-  m_pib->setDefaultKeyOfIdentity(m_name, keyName);
   return m_defaultKey;
 }
 
-const Key&
-IdentityImpl::setDefaultKey(const uint8_t* key, size_t keyLen, const Name& keyName)
-{
-  addKey(key, keyLen, keyName);
-  return setDefaultKey(keyName);
-}
-
-const Key&
+Key
 IdentityImpl::getDefaultKey() const
 {
   BOOST_ASSERT(m_keys.isConsistent());
 
-  if (!m_isDefaultKeyLoaded) {
+  if (!m_defaultKey) {
     m_defaultKey = m_keys.get(m_pib->getDefaultKeyOfIdentity(m_name));
-    m_isDefaultKeyLoaded = true;
+    NDN_LOG_DEBUG("Caching default key " << m_defaultKey.getName());
   }
-  BOOST_ASSERT(m_pib->getDefaultKeyOfIdentity(m_name) == m_defaultKey.getName());
 
+  BOOST_ASSERT(m_defaultKey);
+  BOOST_ASSERT(m_defaultKey.getName() == m_pib->getDefaultKeyOfIdentity(m_name));
   return m_defaultKey;
 }
 

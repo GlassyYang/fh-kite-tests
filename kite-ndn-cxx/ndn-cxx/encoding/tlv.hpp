@@ -19,8 +19,8 @@
  * See AUTHORS.md for complete list of ndn-cxx authors and contributors.
  */
 
-#ifndef NDN_ENCODING_TLV_HPP
-#define NDN_ENCODING_TLV_HPP
+#ifndef NDN_CXX_ENCODING_TLV_HPP
+#define NDN_CXX_ENCODING_TLV_HPP
 
 #include "ndn-cxx/detail/common.hpp"
 
@@ -33,9 +33,10 @@
 
 namespace ndn {
 
-/** @brief practical limit of network layer packet size
+/**
+ * @brief Practical size limit of a network-layer packet.
  *
- *  If a packet is longer than this size, library and application MAY drop it.
+ * If a packet is longer than this size, library and application MAY drop it.
  */
 const size_t MAX_NDN_PACKET_SIZE = 8800;
 
@@ -96,7 +97,7 @@ enum : uint32_t {
   NameComponentMax = 65535,
 
   AppPrivateBlock1 = 128,
-  AppPrivateBlock2 = 32767
+  AppPrivateBlock2 = 32768,
 };
 
 /** @brief TLV-TYPE numbers defined in NDN Packet Format v0.2 but not in v0.3
@@ -117,11 +118,11 @@ enum : uint32_t {
  */
 enum : uint32_t {
   KeywordNameComponent     = 32,
-  SegmentNameComponent     = 33,
-  ByteOffsetNameComponent  = 34,
-  VersionNameComponent     = 35,
-  TimestampNameComponent   = 36,
-  SequenceNumNameComponent = 37,
+  SegmentNameComponent     = 50,
+  ByteOffsetNameComponent  = 52,
+  VersionNameComponent     = 54,
+  TimestampNameComponent   = 56,
+  SequenceNumNameComponent = 58,
 };
 
 /** @brief SignatureType values
@@ -140,9 +141,9 @@ std::ostream&
 operator<<(std::ostream& os, SignatureTypeValue st);
 
 /** @brief TLV-TYPE numbers for SignatureInfo extensions
- *  @sa docs/specs/certificate-format.rst
+ *  @sa <a href="../specs/certificate.html">NDN Certificate Format</a>
  */
-enum {
+enum : uint32_t {
   ValidityPeriod = 253,
   NotBefore = 254,
   NotAfter = 255,
@@ -256,12 +257,12 @@ size_t
 writeVarNumber(std::ostream& os, uint64_t number);
 
 /**
- * @brief Read nonNegativeInteger in NDN-TLV encoding.
+ * @brief Read a NonNegativeInteger in NDN-TLV encoding.
  * @tparam Iterator an iterator or pointer that dereferences to uint8_t or compatible type
  *
- * @param [in]    size  size of the nonNegativeInteger
+ * @param [in]    size  size of the NonNegativeInteger
  * @param [inout] begin Begin of the buffer, will be incremented to point to the first byte after
- *                      the read nonNegativeInteger
+ *                      the read NonNegativeInteger
  * @param [in]    end   End of the buffer
  *
  * @throw tlv::Error number cannot be read
@@ -273,14 +274,14 @@ uint64_t
 readNonNegativeInteger(size_t size, Iterator& begin, Iterator end);
 
 /**
- * @brief Get the number of bytes necessary to hold the value of @p integer encoded as nonNegativeInteger.
+ * @brief Get the number of bytes necessary to hold the value of @p integer encoded as NonNegativeInteger.
  */
 constexpr size_t
 sizeOfNonNegativeInteger(uint64_t integer) noexcept;
 
 /**
- * @brief Write nonNegativeInteger to the specified stream.
- * @return length of written nonNegativeInteger
+ * @brief Write a NonNegativeInteger to the specified stream.
+ * @return length of written NonNegativeInteger
  */
 size_t
 writeNonNegativeInteger(std::ostream& os, uint64_t integer);
@@ -490,13 +491,13 @@ uint64_t
 readNonNegativeInteger(size_t size, Iterator& begin, Iterator end)
 {
   if (size != 1 && size != 2 && size != 4 && size != 8) {
-    NDN_THROW(Error("Invalid length " + to_string(size) + " for nonNegativeInteger"));
+    NDN_THROW(Error("Invalid length " + to_string(size) + " for NonNegativeInteger"));
   }
 
   uint64_t number = 0;
   bool isOk = detail::ReadNumber<Iterator>()(size, begin, end, number);
   if (!isOk) {
-    NDN_THROW(Error("Insufficient data during nonNegativeInteger parsing"));
+    NDN_THROW(Error("Insufficient data during NonNegativeInteger parsing"));
   }
 
   return number;
@@ -537,4 +538,4 @@ writeNonNegativeInteger(std::ostream& os, uint64_t integer)
 } // namespace tlv
 } // namespace ndn
 
-#endif // NDN_ENCODING_TLV_HPP
+#endif // NDN_CXX_ENCODING_TLV_HPP
